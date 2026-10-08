@@ -69,6 +69,13 @@ Quest types (engine-level): `journey` (cumulative distance along a route),
 `target` (distance by a date), `streak` (days on the road). Packs declare
 which they use; the engine runs them identically.
 
+**Timetables**: dated checkpoints inside any quest — "the boat leaves
+Friday; be at 40 km or reroute via Honolulu." Hit one: bonus XP and a
+story beat. Miss one: no punishment, the story adapts ("you missed the
+boat — the long way it is"), which is secretly more game. The showcase
+pack is `round80/`; the Camino gets a gentler version (Easter in
+Santiago).
+
 Campaigns are independent: several can be in progress at once; each march
 is assigned to one campaign (default: the active one). Lifetime stats stay
 global across campaigns. Pack format spec: [packs/README.md](../packs/README.md).
