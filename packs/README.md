@@ -111,6 +111,7 @@ grants nothing and costs nothing — encounters never punish.
 | `klondike/` | ~550 km | Whitehorse → Dawson — Chilkoot Pass incline boss |
 | `silkroad/` | idea | Xi'an → Venice — trade goods as collectibles, caravanserais as inns |
 | `round80/` | idea | Around the World in 80 Days — the timetable showcase |
+| `terryfox/` | 5,373 km | Terry Fox's Marathon of Hope — a marathon a day across Canada; milestone donations hook |
 
 ### Training
 | Pack | Distance | Notes |
