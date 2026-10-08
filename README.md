@@ -45,7 +45,10 @@ treadmill/
   reader.py   live 1/sec FTMS stream -> console (+ optional CSV log)
 docs/
   protocol.md    FTMS byte map, quirks, 5L expectations
-  game-design.md the full Walk to Mordor game design
+  game-design.md the full game design (engine + content packs)
+packs/
+  README.md      content-pack spec (route/encounters/art format)
+  lotr/          Pack 1: Walk to Mordor (route.json drafted)
 ```
 
 ## Notes

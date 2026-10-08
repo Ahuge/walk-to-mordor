@@ -20,6 +20,10 @@ rituals — engagement hooks that make you *want* to get on the pad.
 3. **Kind, not punishing.** Rest is part of the design (even Frodo rested
    at Rivendell). The game never shames a missed day; it welcomes you back.
 4. **Yours to tinker with.** JSON route, hackable bridge, local-first data.
+5. **One engine, many journeys.** The engine doesn't know what Middle-earth
+   is. Games are *content packs* — route, beats, encounters, art, level
+   titles, all data. LOTR is pack one; a Vancouver→Calgary road trip or a
+   100K ultra plan is just another pack (§2b).
 
 > Copyright note: story beats below are paraphrased in our own words.
 > Don't lift passages from the books — homage, not quotation.
@@ -38,11 +42,43 @@ walk on pad → BLE bridge streams 1/sec FTMS → engine accumulates distance
 - **Incline matters**: the 5L's 0–9% auto incline maps to terrain. Climbing
   Weathertop at 6% should *feel* earned — elevation gain feeds XP bonuses.
 
-## 3. The Route — Bag End to Mount Doom
+## 2b. One engine, many games
+
+The engine is game-agnostic. A **content pack** is a folder of JSON + SVG:
+
+```
+packs/<id>/
+  pack.json        title, units, level titles, XP tuning, quest types
+  route.json       ordered legs: name, distance, beats, map art
+  encounters.json  weighted event table (per-leg overrides allowed)
+  art/             SVG map regions, token, banners
+```
+
+The engine only understands: odometer, marches, milestones, encounters,
+XP, journal, streaks. Everything thematic lives in the pack:
+
+- **Pack 1: Walk to Mordor** — the LOTR journey (§3).
+- **Pack idea: Vancouver → X** — e.g. Vancouver→Seattle (230 km),
+  →Calgary (970 km), →Toronto (4,400 km). Real cities as milestones,
+  road-trip encounters ("Moose on the highway — hold pace 5 min"), map =
+  stylized highway SVG (real map tiles later, licensing permitting).
+- **Pack idea: Ultra** — a 50K/100K training game. Legs become training
+  weeks, beats become aid stations, the finale is race day.
+
+Quest types (engine-level): `journey` (cumulative distance along a route),
+`target` (distance by a date), `streak` (days on the road). Packs declare
+which they use; the engine runs them identically.
+
+Campaigns are independent: several can be in progress at once; each march
+is assigned to one campaign (default: the active one). Lifetime stats stay
+global across campaigns. Pack format spec: [packs/README.md](../packs/README.md).
+
+## 3. Pack 1: Walk to Mordor — the route
 
 Twelve legs, each with an arrival beat and a departure beat (paraphrased).
 Distances are **placeholders** — calibrate against a Tolkien atlas before
-locking (the famous fan "Walk to Mordor" totals ~1,700+ miles; verify).
+locking (the famous fan "Walk to Mordor" totals ~1,779 mi; verify).
+Canonical data lives in [packs/lotr/route.json](../packs/lotr/route.json).
 
 | # | Leg | Beat (arrival) |
 |---|---|---|
@@ -129,7 +165,10 @@ only ever opt-in and framed as fellowship fun, never competition-first.
 
 - **Format**: hand-drawn-style SVG, one art pass per leg region; token =
   a little hooded figure (CSS/SVG).
-- **Data**: `route.json` — ordered waypoints per leg with cumulative
+- **Pack-driven**: each content pack ships its own SVG regions — the
+  renderer doesn't care whether it's Middle-earth or the Trans-Canada
+  Highway. The engine only moves the token, reveals fog, and fires beats.
+- **Data**: `<pack>/route.json` — ordered waypoints per leg with cumulative
   distances; engine interpolates token position from lifetime distance.
 - **Fog of war**: per-leg `<mask>` revealed on first entry; visited legs
   stay revealed.
@@ -148,7 +187,7 @@ it sidesteps any map-copyright issues.
 ┌────────────┐   BLE FTMS 1/sec   ┌─────────────┐  events   ┌──────────┐
 │ walking pad │ ────────────────► │ bridge/      │ ────────► │ engine/  │
 └────────────┘                    │ reader.py    │           │ state.py │
-                                  │ → SQLite   │           │ route.json│
+                                  │ → SQLite   │           │ packs/     │
                                   └─────────────┘           └────┬─────┘
                                                                 │ SSE
                                                            ┌────▼─────┐
@@ -160,12 +199,13 @@ it sidesteps any map-copyright issues.
 
 - **bridge/** (this repo, Phase 0): `treadmill/probe.py`, `treadmill/reader.py`
   → append to `walks.db` (SQLite): timestamped 1/sec rows + march summaries.
-- **engine/** (Phase 1–2): consumes the DB; owns lifetime odometer, leg
-  position, encounter RNG, XP/levels, journal. Pure Python, testable.
+- **engine/** (Phase 1–2): consumes the DB; owns lifetime odometer, marches,
+  campaign state, quest types (journey/target/streak), encounter RNG,
+  XP/levels, journal. Pure Python, testable, pack-agnostic.
 - **ui/** (Phase 2): local web dashboard. Start simple: FastAPI + SSE +
   inline SVG map. No auth needed (localhost); phone on same Wi-Fi can view.
-- **Data files**: `route.json` (legs, beats, distances), `encounters.json`
-  (weighted event table per leg), all hand-editable.
+- **packs/**: content packs (data only) — route, beats, encounters, art,
+  level titles. See [packs/README.md](../packs/README.md).
 
 Everything local-first. No accounts, no cloud, no telemetry — the pad data
 never leaves the house.
@@ -175,7 +215,8 @@ never leaves the house.
 - **Phase 0 — Prove it** (now): `probe.py` + `reader.py` against the real
   5L when it arrives (~Oct 12–14). Confirm FTMS layout matches the 3S dump.
 - **Phase 1 — Logger**: march detection (belt start/stop), SQLite store,
-  CLI progress ("412.3 / 1,779 mi — 23% to Mordor").
+  CLI progress ("412.3 / 1,779 mi — 23% to Mordor"). Engine built
+  pack-agnostic from day one: the LOTR pack is just the first data folder.
 - **Phase 2 — Map & story**: dashboard with live SVG map, fog of war,
   leg beats + journal.
 - **Phase 3 — Game systems**: encounters, rituals, XP/levels, rest bonuses,
@@ -192,3 +233,9 @@ never leaves the house.
 4. Does the whole family walk? (Babywearing miles count double, obviously.)
 5. iOS widget? The reference project syncs to Apple Health via Shortcuts —
    worth copying for the Health app ring-closers.
+6. Pack format stability: v0 packs are hand-written JSON; decide when (if
+   ever) to version the schema.
+7. Real-map tiles for the Vancouver→X packs: licensing (Thunderforest /
+   Stadia?) vs. stylized SVG. Stylized first.
+8. Should one march be able to feed multiple campaigns, or one campaign
+   per march? (Current answer: one campaign per march, default = active.)
