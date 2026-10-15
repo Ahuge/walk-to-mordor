@@ -68,19 +68,23 @@
   #mini-status { display:none; }
 
   /* ---- widget mode (~300x275): narrow viewport or ?widget=1 ----
-     Minimap on top (zoomable), compact [Start][Stop][−][+] row below. */
-  body.widget { padding:0; height:100vh; display:flex; flex-direction:column; }
+     Minimap on top (zoomable), compact [Start][Stop][−][+] row below.
+     Uses explicit viewport heights (not a flex height chain) so the map
+     always gets a definite size. */
+  body.widget { padding:0; }
   body.widget header, body.widget footer { display:none; }
-  body.widget main { flex-direction:column; gap:0; max-width:none; margin:0; flex:1; min-height:0; }
-  body.widget #map-card { padding:0; border-radius:0; flex:1; min-height:0; display:flex; flex-direction:column; }
-  body.widget #map-wrap { flex:1; min-height:0; display:flex; flex-direction:column; }
-  body.widget #map { flex:1; height:auto; min-height:0; border-radius:0; }
-  body.widget aside { flex:none; min-width:0; }
+  body.widget main { display:block; max-width:none; margin:0; padding:0; }
+  body.widget #map-card { padding:0; border-radius:0; }
+  body.widget #map-wrap { position:relative; }
+  body.widget #map { height:calc(100vh - 62px); min-height:0; border-radius:0; }
+  body.widget aside { min-width:0; }
   body.widget #journey-card, body.widget #march-card { display:none; }
-  body.widget #belt-card { border-radius:0; padding:6px; display:flex; gap:6px; }
+  body.widget #belt-card { border-radius:0; padding:6px; height:62px; box-sizing:border-box;
+    display:flex; gap:6px; }
   body.widget #belt-card h2 { display:none; }
-  body.widget #belt-card .btnrow { display:contents; }
-  body.widget #belt-card .btnrow button { padding:10px 0; font-size:14px; margin-top:0; }
+  body.widget #belt-card .btnrow { flex:1 1 0; display:flex; gap:6px; margin-top:0; min-width:0; }
+  body.widget #belt-card .btnrow button { flex:1 1 0; min-width:0; padding:10px 0;
+    font-size:14px; margin-top:0; }
   body.widget .wide-only { display:none; }
   body.widget .map-btns { top:8px; left:8px; }
   body.widget .map-btns button { width:30px; height:30px; font-size:15px; }
