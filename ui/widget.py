@@ -17,33 +17,53 @@ URL = "http://127.0.0.1:8471/?widget=1"
 TITLE = "Walk to Mordor"
 WIDTH, HEIGHT = 320, 300
 
-# Drag strip + close button injected into the page (frameless windows
-# have no title bar to drag or close with).
+# Drag handle + close button injected into the page (frameless windows
+# have no title bar). The hand button toggles "move mode": when on,
+# dragging moves the window; when off, the map pans normally.
 DRAG_JS = """
 (function() {
   if (window.__wtmWidget) return; window.__wtmWidget = true;
-  var bar = document.createElement('div');
-  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;height:16px;z-index:9999;'
-    + 'cursor:move;background:transparent;';
-  var x = document.createElement('div');
-  x.textContent = '\\u00d7';
+  var moveMode = false, sx, sy;
+  function btn(right) {
+    var b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:3px;right:' + right + 'px;z-index:10000;'
+      + 'cursor:pointer;color:#f3e9d2;background:rgba(0,0,0,.5);border-radius:9px;'
+      + 'width:18px;height:18px;font-size:12px;line-height:18px;text-align:center;'
+      + 'font-family:sans-serif;display:flex;align-items:center;justify-content:center;';
+    document.body.appendChild(b);
+    return b;
+  }
+  var hand = btn(28);
+  hand.title = 'Move window (click to toggle, Esc to stop)';
+  hand.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none"'
+    + ' stroke="#f3e9d2" stroke-width="2.4" stroke-linecap="round">'
+    + '<path d="M12 3v18M3 12h18M12 3L9 6m3-3l3 3M12 21l-3-3m3 3l3-3'
+    + 'M3 12l3-3m-3 3l3 3M21 12l-3-3m3 3l-3 3"/></svg>';
+  var x = btn(5);
   x.title = 'Close widget';
-  x.style.cssText = 'position:fixed;top:3px;right:5px;z-index:10000;cursor:pointer;'
-    + 'color:#f3e9d2;background:rgba(0,0,0,.5);border-radius:9px;width:18px;height:18px;'
-    + 'font-size:13px;line-height:18px;text-align:center;font-family:sans-serif;';
+  x.textContent = '\\u00d7';
   x.onclick = function() { window.pywebview.api.close(); };
-  var sx, sy;
-  bar.addEventListener('mousedown', function(e) {
-    sx = e.screenX; sy = e.screenY; window.pywebview.api.dragstart(sx, sy);
-  });
+  hand.onclick = function() {
+    moveMode = !moveMode;
+    hand.style.background = moveMode ? 'rgba(176,141,43,.9)' : 'rgba(0,0,0,.5)';
+    document.body.style.cursor = moveMode ? 'move' : '';
+  };
+  window.addEventListener('mousedown', function(e) {
+    if (!moveMode || e.target === hand || e.target === x) return;
+    sx = e.screenX; sy = e.screenY;
+    window.pywebview.api.dragstart(sx, sy);
+    e.preventDefault(); e.stopPropagation();
+  }, true);
   window.addEventListener('mousemove', function(e) {
-    if (sx !== undefined) window.pywebview.api.dragmove(e.screenX, e.screenY);
+    if (moveMode && sx !== undefined)
+      window.pywebview.api.dragmove(e.screenX, e.screenY);
   });
   window.addEventListener('mouseup', function() {
     sx = undefined; window.pywebview.api.dragend();
   });
-  document.body.appendChild(bar);
-  document.body.appendChild(x);
+  window.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && moveMode) hand.onclick();
+  });
 })();
 """
 
@@ -61,10 +81,8 @@ class Api:
         self._hwnd = None
 
     def _hwnd_(self):
-        import ctypes
-
         if not self._hwnd:
-            self._hwnd = ctypes.windll.user32.FindWindowW(None, TITLE)
+            self._hwnd = _widget_hwnd()
         return self._hwnd
 
     def _pos(self):
@@ -122,7 +140,7 @@ def _move_bottom_right():
         ctypes.windll.user32.SystemParametersInfoW(0x0030, 0,
                                                    ctypes.byref(rect), 0)
         x, y = rect.right - WIDTH - 12, rect.bottom - HEIGHT - 12
-        hwnd = ctypes.windll.user32.FindWindowW(None, TITLE)
+        hwnd = _widget_hwnd()
         if hwnd:
             # SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE
             ctypes.windll.user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0015)
@@ -130,22 +148,61 @@ def _move_bottom_right():
         pass
 
 
+def _widget_hwnd():
+    """HWND of our widget window: same process + exact title.
+
+    (FindWindowW by title alone can grab the browser tab showing the
+    dashboard instead.)
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    u32 = ctypes.windll.user32
+    k32 = ctypes.windll.kernel32
+    target_pid = k32.GetCurrentProcessId()
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def cb(hwnd, _):
+        pid = wintypes.DWORD()
+        u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value != target_pid:
+            return True
+        n = u32.GetWindowTextLengthW(hwnd)
+        if not n:
+            return True
+        buf = ctypes.create_unicode_buffer(n + 1)
+        u32.GetWindowTextW(hwnd, buf, n + 1)
+        if buf.value == TITLE:
+            found.append(hwnd)
+        return True
+
+    u32.EnumWindows(cb, 0)
+    return found[0] if found else None
+
+
 def _set_window_icon():
-    """Best-effort: give the frameless window our icon on Windows."""
+    """Best-effort: give the widget window our icon on Windows."""
     try:
         import ctypes
         icon = Path(__file__).resolve().parent.parent / "packs" / "lotr" / "art" / "icon.ico"
         if not icon.exists():
             return
         u32 = ctypes.windll.user32
-        hwnd = u32.FindWindowW(None, TITLE)
+        hwnd = _widget_hwnd()
         if not hwnd:
             return
         # IMAGE_ICON=1, LR_LOADFROMFILE=0x10
         hicon = u32.LoadImageW(None, str(icon), 1, 0, 0, 0x10)
-        if hicon:
-            u32.SendMessageW(hwnd, 0x0080, 1, hicon)  # WM_SETICON ICON_BIG
-            u32.SendMessageW(hwnd, 0x0080, 0, hicon)  # WM_SETICON ICON_SMALL
+        if not hicon:
+            return
+        u32.SendMessageW(hwnd, 0x0080, 1, hicon)  # WM_SETICON ICON_BIG
+        u32.SendMessageW(hwnd, 0x0080, 0, hicon)  # WM_SETICON ICON_SMALL
+        # Class icons too, so the taskbar picks it up.
+        set_cls = getattr(u32, "SetClassLongPtrW", None)
+        if set_cls:
+            set_cls(hwnd, -14, hicon)  # GCLP_HICON
+            set_cls(hwnd, -34, hicon)  # GCLP_HICONSM
     except Exception:
         pass
 
@@ -183,6 +240,12 @@ def main() -> None:
         except Exception:
             pass
         _set_window_icon()
+        # Re-apply shortly after: WebView2 can reset the icon on navigate.
+        try:
+            import threading
+            threading.Timer(2.0, _set_window_icon).start()
+        except Exception:
+            pass
 
     win.events.loaded += on_loaded
     try:
