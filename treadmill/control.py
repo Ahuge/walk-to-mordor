@@ -38,8 +38,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bridge.client import api_get, api_post  # noqa: E402
-from bridge.store import data_dir, open_db  # noqa: E402
+from bridge.client import api_delete, api_get, api_post  # noqa: E402
+from bridge.store import data_dir, open_db, queue_command_row  # noqa: E402
 
 CONTROL_POINT_UUID = "00002ad9-0000-1000-8000-00805f9b34fb"
 SPEED_RANGE_UUID = "00002ad4-0000-1000-8000-00805f9b34fb"
@@ -191,17 +191,25 @@ def queue_command(op: str, args: dict):
     res = api_post("/api/commands", {"op": op, "args": args})
     if isinstance(res, dict) and "id" in res:
         return res["id"], True
+    # daemon not reachable: write directly (it'll execute on next run)
     db = open_db()
-    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    cur = db.execute(
-        "INSERT INTO commands (created_at, op, args, status)"
-        " VALUES (?,?,?,'pending')",
-        (ts, op, json.dumps(args)),
-    )
+    cmd_id = queue_command_row(db, op, args)
     db.commit()
-    cmd_id = cur.lastrowid
     db.close()
     return cmd_id, False
+
+
+def clear_commands(status: str = "pending") -> int:
+    """Delete queued commands. Returns the count cleared."""
+    res = api_delete(f"/api/commands?status={status}")
+    if isinstance(res, dict) and "cleared" in res:
+        return res["cleared"]
+    db = open_db()
+    cur = db.execute("DELETE FROM commands WHERE status=?", (status,))
+    db.commit()
+    n = cur.rowcount
+    db.close()
+    return n
 
 
 def _command_status(cmd_id: int):
@@ -265,10 +273,16 @@ def main() -> None:
     p_incline.add_argument("pct", type=float)
     sub.add_parser("status", parents=[flags],
                    help="show recent commands")
+    sub.add_parser("clear", help="delete pending commands from the queue")
     args = ap.parse_args()
 
     if args.cmd == "status":
         show_status()
+        return
+
+    if args.cmd == "clear":
+        n = clear_commands()
+        print(f"cleared {n} pending command(s)")
         return
 
     if args.cmd == "start" and not args.now:

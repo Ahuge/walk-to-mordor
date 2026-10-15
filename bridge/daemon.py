@@ -35,12 +35,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from bleak import BleakClient  # noqa: E402
 
 from bridge.stats import snapshot_from_db  # noqa: E402
-from bridge.store import data_dir, open_db  # noqa: E402
+from bridge.store import data_dir, open_db, queue_command_row  # noqa: E402
 from treadmill.control import (  # noqa: E402
     COMMAND_TTL_S,
     CONTROL_POINT_UUID,
     TreadmillController,
-    queue_command,
 )
 from treadmill.reader import (  # noqa: E402
     TREADMILL_DATA_UUID,
@@ -232,8 +231,15 @@ async def command_worker(controller: TreadmillController,
                            "done" if ok else "error", {"ok": ok})
         except Exception as e:  # noqa: BLE001
             log.exception("command %d (%s) failed", cmd_id, op)
-            finish_command(db, lock, cmd_id, "error",
-                           {"ok": False, "reason": str(e)})
+            try:
+                finish_command(db, lock, cmd_id, "error",
+                               {"ok": False, "reason": str(e)})
+            except Exception:  # noqa: BLE001
+                # Status write failed too (e.g. lock contention): back off so
+                # we don't hot-loop re-claiming the same pending command.
+                log.exception("command %d: could not write failure status",
+                              cmd_id)
+                await asyncio.sleep(2)
 
 
 async def sleep_or_stop(seconds: float) -> None:
@@ -258,6 +264,11 @@ class _ApiHandler(BaseHTTPRequestHandler):
     """
 
     server_version = "WalkToMordor/1"
+    # Set by run(): the daemon's shared DB connection and lock. The handler
+    # writes through these directly — never via control.queue_command, which
+    # would POST back to this same server (infinite regress).
+    db = None
+    lock = None
 
     def log_message(self, *args):  # quiet
         pass
@@ -357,16 +368,38 @@ class _ApiHandler(BaseHTTPRequestHandler):
             args = data.get("args") or {}
             if op not in ("start", "stop", "set_speed", "set_incline"):
                 return self._send_json({"error": f"unknown op {op!r}"}, 400)
-            cmd_id = queue_command(op, args)
+            with type(self).lock:
+                cmd_id = queue_command_row(type(self).db, op, args)
+                type(self).db.commit()
+            log.info("API: queued command %d (%s %s) from %s",
+                     cmd_id, op, args, self.client_address[0])
             self._send_json({"id": cmd_id}, 202)
+        except Exception as e:  # noqa: BLE001
+            self._send_json({"error": str(e)}, 500)
+
+    def do_DELETE(self):
+        try:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/commands":
+                return self._send_json({"error": "not found"}, 404)
+            only = parse_qs(parsed.query).get("status", ["pending"])[0]
+            with type(self).lock:
+                cur = type(self).db.execute(
+                    "DELETE FROM commands WHERE status=?", (only,))
+                type(self).db.commit()
+            log.info("API: cleared %d '%s' commands", cur.rowcount, only)
+            self._send_json({"cleared": cur.rowcount})
         except Exception as e:  # noqa: BLE001
             self._send_json({"error": str(e)}, 500)
 
 
 def _serve_api_forever():
-    server = ThreadingHTTPServer(("127.0.0.1", API_PORT), _ApiHandler)
+    # 0.0.0.0 so WSL2 can reach it via the host IP (Windows localhost
+    # forwarding is unreliable). Home-LAN only in practice; the port is
+    # arbitrary and the API is belt controls, so keep it firewalled.
+    server = ThreadingHTTPServer(("0.0.0.0", API_PORT), _ApiHandler)
     server.daemon_threads = True
-    log.info("API listening on 127.0.0.1:%d", API_PORT)
+    log.info("API listening on 0.0.0.0:%d", API_PORT)
     try:
         server.serve_forever()
     except Exception:  # noqa: BLE001
@@ -385,6 +418,8 @@ async def run() -> None:
     # written; re-queue it so it isn't lost.
     db.execute("UPDATE commands SET status='pending' WHERE status='running'")
     db.commit()
+    _ApiHandler.db = db
+    _ApiHandler.lock = lock
     log.info("daemon started, db=%s", ddir / "walks.db")
 
     api_thread = threading.Thread(target=_serve_api_forever, daemon=True,

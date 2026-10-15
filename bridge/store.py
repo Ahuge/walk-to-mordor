@@ -105,6 +105,24 @@ def data_dir() -> Path:
     return d
 
 
+def queue_command_row(db: sqlite3.Connection, op: str, args: dict) -> int:
+    """Insert a belt command row (caller commits).
+
+    Coalesces with same-op pending commands: only the latest desired state
+    matters, so a stuck button can't flood the queue.
+    """
+    import json as _json
+    from datetime import datetime as _dt, timezone as _tz
+    db.execute("DELETE FROM commands WHERE status='pending' AND op=?", (op,))
+    ts = _dt.now(_tz.utc).isoformat(timespec="seconds")
+    cur = db.execute(
+        "INSERT INTO commands (created_at, op, args, status)"
+        " VALUES (?,?,?,'pending')",
+        (ts, op, _json.dumps(args)),
+    )
+    return cur.lastrowid
+
+
 def open_db() -> sqlite3.Connection:
     """Open walks.db (thread-safe handle). Runs SCHEMA idempotently.
 

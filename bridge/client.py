@@ -8,20 +8,46 @@ import json
 import urllib.error
 import urllib.request
 
-API_BASE = "http://127.0.0.1:8471"
+API_PORT = 8471
 _TIMEOUT = 3
+
+
+def _wsl_host_ip():
+    """Windows host IP as seen from WSL2 (the resolv.conf nameserver)."""
+    try:
+        with open("/etc/resolv.conf", encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    ip = parts[1]
+                    if not ip.startswith("127."):
+                        return ip
+    except OSError:
+        pass
+    return None
+
+
+def _api_bases():
+    bases = [f"http://127.0.0.1:{API_PORT}"]
+    host_ip = _wsl_host_ip()
+    if host_ip:
+        bases.append(f"http://{host_ip}:{API_PORT}")
+    return bases
 
 
 def _request(method: str, path: str, payload=None):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(API_BASE + path, data=data, method=method)
-    if data:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            return json.loads(resp.read() or b"{}")
-    except (urllib.error.URLError, TimeoutError, OSError):
-        return None
+    last_error = None
+    for base in _api_bases():
+        req = urllib.request.Request(base + path, data=data, method=method)
+        if data:
+            req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+                return json.loads(resp.read() or b"{}")
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_error = e
+    return None
 
 
 def api_get(path: str):
@@ -30,3 +56,7 @@ def api_get(path: str):
 
 def api_post(path: str, payload: dict):
     return _request("POST", path, payload)
+
+
+def api_delete(path: str):
+    return _request("DELETE", path)
