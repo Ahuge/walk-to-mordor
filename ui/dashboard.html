@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Walk to Mordor</title>
+<link rel="icon" href="/icon.png">
 <link rel="stylesheet" href="/leaflet.css">
 <style>
   :root { --parchment:#f3e9d2; --ink:#3a2e1e; --bg:#1c1a17; --card:#2a251d; }
@@ -89,7 +90,7 @@
   body.widget .map-btns { top:8px; left:8px; }
   body.widget .map-btns button { width:30px; height:30px; font-size:15px; }
   body.widget #mini-status { display:block; position:absolute; left:46px; bottom:8px; z-index:500;
-    background:rgba(28,26,23,.85); color:#f3e9d2; font-size:11px; padding:4px 8px;
+    background:rgba(28,26,23,.85); color:#f3e9d2; font-size:16px; padding:4px 8px;
     border-radius:6px; font-style:italic; pointer-events:none; max-width:calc(100% - 60px);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
@@ -150,7 +151,7 @@
 <script>
 const YTOP = 4334;
 let map, journey, cumPx, totalPx, token, fogLayers, fogHalos, lastPos = null, lastSpeed = 0;
-let routeLegs = [], lastTodaySteps = 0;
+let routeLegs = [], lastTodaySteps = 0, followToken = false;
 
 function fmtEta(h) {
   if (!isFinite(h) || h < 0) return '—';
@@ -267,7 +268,12 @@ async function initInner() {
 
   document.getElementById('zin').onclick = () => map.zoomIn();
   document.getElementById('zout').onclick = () => map.zoomOut();
-  document.getElementById('zloc').onclick = () => { if (lastPos) map.panTo(lastPos); };
+  document.getElementById('zloc').onclick = () => {
+    if (lastPos) { map.panTo(lastPos); followToken = true; }
+  };
+  // In widget mode the map follows the token; grabbing the map pauses
+  // following until ⌖ is tapped.
+  map.on('dragstart', () => { followToken = false; });
 
   applyWidgetMode();
 
@@ -297,7 +303,9 @@ async function addOverlays() {
     marker.bindPopup(`<b>${m.title}</b><br>${m.description || ''}${link}`);
     groups[g].addLayer(marker);
   }
-  for (const g of Object.values(groups)) g.addTo(map);
+  for (const [name, g] of Object.entries(groups)) {
+    if (name !== 'Battles') g.addTo(map);  // battles off by default
+  }
   L.control.layers(null, groups, { collapsed: false }).addTo(map);
 }
 
@@ -308,6 +316,14 @@ async function tick() {
   const pos = pointAt(s.journey_frac * totalPx);
   lastPos = pos;
   token.setLatLng(pos);
+  if (document.body.classList.contains('widget')) {
+    if (!followToken && pos) {
+      map.setView(pos, Math.max(map.getZoom(), 0));
+      followToken = true;
+    } else if (followToken) {
+      map.panTo(pos);
+    }
+  }
 
   // fog: corridor along the visited portion of the path (image px coords),
   // plus a halo around the token so the nearby area is always readable

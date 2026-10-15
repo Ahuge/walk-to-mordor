@@ -86,6 +86,12 @@ class MarchTracker:
         self.speed_n = 0
         self.max_incline = 0.0
         self._tick = 0
+        # Accumulated positive deltas (robust to pad counter resets when a
+        # new session starts mid-march; last-minus-first would undercount).
+        self.acc_dist = 0
+        self.acc_cal = 0
+        self.acc_steps = 0
+        self._prev = {}
 
     def reading(self, ts: str, row: dict) -> None:
         now = datetime.now(timezone.utc)
@@ -103,10 +109,25 @@ class MarchTracker:
             self.speed_n = 0
             self.max_incline = 0.0
             self._tick = 0
+            self.acc_dist = 0
+            self.acc_cal = 0
+            self.acc_steps = 0
+            self._prev = {k: row.get(k)
+                          for k in ("distance_m", "calories", "steps")}
             log.info("march started")
             return
         # in a march: track stats, watch for the belt stopping
         self.last = row
+        for key, attr in (("distance_m", "acc_dist"),
+                          ("calories", "acc_cal"),
+                          ("steps", "acc_steps")):
+            cur = row.get(key)
+            prev = self._prev.get(key)
+            if cur is not None:
+                if prev is not None and cur >= prev:
+                    setattr(self, attr, getattr(self, attr) + (cur - prev))
+                # cur < prev: counter reset (new session) — re-baseline.
+                self._prev[key] = cur
         if speed > SPEED_THRESHOLD_KMH:
             self.last_motion = now
             self.speed_sum += speed
@@ -121,20 +142,14 @@ class MarchTracker:
 
     def _publish_open(self, now) -> None:
         """Publish the in-progress march so stats/dashboards show live distance."""
-        dist = max(0, (self.last.get("distance_m") or 0)
-                   - (self.first.get("distance_m") or 0))
-        steps = 0
-        if self.last.get("steps") is not None and \
-                self.first.get("steps") is not None:
-            steps = max(0, self.last["steps"] - self.first["steps"])
         dur = max(0, int((now - self.start_dt).total_seconds()))
         with self.lock:
             self.db.execute(
                 "INSERT INTO meta (key, value) VALUES ('open_march', ?)"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (json.dumps({"started_at": self.start_ts,
-                             "distance_m": dist,
-                             "steps": steps,
+                             "distance_m": self.acc_dist,
+                             "steps": self.acc_steps,
                              "duration_s": dur,
                              "updated_at": now.isoformat(timespec="seconds")}),),
             )
@@ -144,12 +159,9 @@ class MarchTracker:
         if not self.in_march:
             return
         end_ts = end_dt.isoformat(timespec="seconds")
-        first, last = self.first, self.last
-        dist = max(0, (last.get("distance_m") or 0) - (first.get("distance_m") or 0))
-        cal = max(0, (last.get("calories") or 0) - (first.get("calories") or 0))
-        steps = None
-        if last.get("steps") is not None and first.get("steps") is not None:
-            steps = max(0, last["steps"] - first["steps"])
+        dist = self.acc_dist
+        cal = self.acc_cal
+        steps = self.acc_steps if self._prev.get("steps") is not None else None
         avg_speed = round(self.speed_sum / self.speed_n, 2) if self.speed_n else 0.0
         duration = max(0, int((end_dt - self.start_dt).total_seconds()))
         if duration < 5 and dist == 0:
@@ -309,6 +321,7 @@ class _ApiHandler(BaseHTTPRequestHandler):
                                   "application/json"),
                 "/markers.json": ("packs/lotr/art/markers.json",
                                   "application/json"),
+                "/icon.png": ("packs/lotr/art/icon.png", "image/png"),
                 "/leaflet.js": ("ui/vendor/leaflet/leaflet.js",
                                 "text/javascript"),
                 "/leaflet.css": ("ui/vendor/leaflet/leaflet.css", "text/css"),
