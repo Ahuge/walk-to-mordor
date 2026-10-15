@@ -84,8 +84,11 @@
     display:flex; gap:6px; }
   body.widget #belt-card h2 { display:none; }
   body.widget #belt-card .btnrow { flex:1 1 0; display:flex; gap:6px; margin-top:0; min-width:0; }
-  body.widget #belt-card .btnrow button { flex:1 1 0; min-width:0; padding:5px 0;
-    font-size:8px; margin-top:0; }
+  body.widget #belt-card .btnrow button { flex:1 1 0; min-width:0; padding:2px 0;
+    font-size:11px; margin-top:0; }
+  body.widget #btnrow-main { display:none; }
+  #btn-toggle { display:none; }
+  body.widget #btn-toggle { display:block; }
   body.widget .wide-only { display:none; }
   body.widget .map-btns { top:8px; left:8px; }
   body.widget .map-btns button { width:30px; height:30px; font-size:15px; }
@@ -124,11 +127,12 @@
     </div>
     <div class="card" id="belt-card">
       <h2>Belt</h2>
-      <div class="btnrow">
+      <div class="btnrow" id="btnrow-main">
         <button id="btn-start">Start</button>
         <button id="btn-stop" class="danger">Stop</button>
       </div>
       <div class="btnrow">
+        <button id="btn-toggle">▶</button>
         <button id="btn-slower">−<span class="wide-only"> speed</span></button>
         <button id="btn-faster">+<span class="wide-only"> speed</span></button>
       </div>
@@ -366,6 +370,9 @@ async function tick() {
   if (ms) ms.textContent =
     `${s.walking ? `Walking ${s.speed_kmh.toFixed(1)} km/h` : 'At rest'} · ` +
     `Leg ${s.leg_index + 1}/${s.leg_count} · ${s.today_km.toFixed(1)} km today`;
+  lastWalking = !!s.walking;
+  const tg = document.getElementById('btn-toggle');
+  if (tg) tg.textContent = s.walking ? '⏹' : '▶';
 }
 
 async function loadMarches() {
@@ -458,6 +465,11 @@ document.getElementById('btn-start').onclick = () => {
 document.getElementById('btn-stop').onclick = () => cmd('stop');
 document.getElementById('btn-slower').onclick = () => nudge(-0.5);
 document.getElementById('btn-faster').onclick = () => nudge(0.5);
+let lastWalking = false;
+document.getElementById('btn-toggle').onclick = () => {
+  if (lastWalking) cmd('stop');
+  else if (confirm('Belt will start shortly. Area clear, safety key in?')) cmd('start');
+};
 
 init();
 </script>

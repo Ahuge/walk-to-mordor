@@ -43,22 +43,40 @@ DRAG_JS = """
   x.title = 'Close widget';
   x.textContent = '\\u00d7';
   x.onclick = function() { window.pywebview.api.close(); };
+  // Resize grip, bottom-right.
+  var grip = document.createElement('div');
+  grip.title = 'Resize';
+  grip.style.cssText = 'position:fixed;bottom:0;right:0;width:18px;height:18px;'
+    + 'z-index:10000;cursor:nwse-resize;';
+  grip.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18">'
+    + '<path d="M18 0 L0 18 L18 18 Z" fill="rgba(243,233,210,.30)"/></svg>';
+  document.body.appendChild(grip);
+  var rx, ry;
+  grip.addEventListener('mousedown', function(e) {
+    rx = e.screenX; ry = e.screenY;
+    window.pywebview.api.resizestart(rx, ry);
+    e.preventDefault(); e.stopPropagation();
+  }, true);
   hand.onclick = function() {
     moveMode = !moveMode;
     hand.style.background = moveMode ? 'rgba(176,141,43,.9)' : 'rgba(0,0,0,.5)';
     document.body.style.cursor = moveMode ? 'move' : '';
   };
   window.addEventListener('mousedown', function(e) {
-    if (!moveMode || e.target === hand || e.target === x) return;
+    if (!moveMode) return;
+    if (hand.contains(e.target) || x.contains(e.target)
+        || grip.contains(e.target)) return;
     sx = e.screenX; sy = e.screenY;
     window.pywebview.api.dragstart(sx, sy);
     e.preventDefault(); e.stopPropagation();
   }, true);
   window.addEventListener('mousemove', function(e) {
-    if (moveMode && sx !== undefined)
+    if (rx !== undefined) window.pywebview.api.resizemove(e.screenX, e.screenY);
+    else if (moveMode && sx !== undefined)
       window.pywebview.api.dragmove(e.screenX, e.screenY);
   });
   window.addEventListener('mouseup', function() {
+    rx = undefined; window.pywebview.api.resizeend();
     sx = undefined; window.pywebview.api.dragend();
   });
   window.addEventListener('keydown', function(e) {
@@ -117,6 +135,40 @@ class Api:
 
     def dragend(self):
         self._drag = None
+
+    def _size(self):
+        import ctypes
+        from ctypes import wintypes
+
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(self._hwnd_(),
+                                          ctypes.byref(rect))
+        return rect.right - rect.left, rect.bottom - rect.top
+
+    def resizestart(self, sx, sy):
+        try:
+            w, h = self._size()
+            self._rsz = (sx, sy, w, h)
+        except Exception:
+            self._rsz = None
+
+    def resizemove(self, sx, sy):
+        if not getattr(self, "_rsz", None):
+            return
+        try:
+            import ctypes
+
+            x0, y0, w0, h0 = self._rsz
+            nw = max(200, w0 + int(sx - x0))
+            nh = max(160, h0 + int(sy - y0))
+            # SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE
+            ctypes.windll.user32.SetWindowPos(self._hwnd_(), 0,
+                                              0, 0, nw, nh, 0x0016)
+        except Exception:
+            pass
+
+    def resizeend(self):
+        self._rsz = None
 
     def close(self):
         try:
@@ -187,14 +239,17 @@ def _set_window_icon():
         import ctypes
         icon = Path(__file__).resolve().parent.parent / "packs" / "lotr" / "art" / "icon.ico"
         if not icon.exists():
+            print(f"icon: missing {icon}")
             return
         u32 = ctypes.windll.user32
         hwnd = _widget_hwnd()
         if not hwnd:
+            print("icon: widget window not found")
             return
         # IMAGE_ICON=1, LR_LOADFROMFILE=0x10
         hicon = u32.LoadImageW(None, str(icon), 1, 0, 0, 0x10)
         if not hicon:
+            print(f"icon: LoadImageW failed for {icon}")
             return
         u32.SendMessageW(hwnd, 0x0080, 1, hicon)  # WM_SETICON ICON_BIG
         u32.SendMessageW(hwnd, 0x0080, 0, hicon)  # WM_SETICON ICON_SMALL
@@ -203,8 +258,9 @@ def _set_window_icon():
         if set_cls:
             set_cls(hwnd, -14, hicon)  # GCLP_HICON
             set_cls(hwnd, -34, hicon)  # GCLP_HICONSM
-    except Exception:
-        pass
+        print(f"icon: set on hwnd={hwnd}")
+    except Exception as e:
+        print(f"icon: failed: {e}")
 
 
 def main() -> None:
