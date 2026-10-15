@@ -23,6 +23,7 @@ WIDTH, HEIGHT = 320, 300
 DRAG_JS = """
 (function() {
   if (window.__wtmWidget) return; window.__wtmWidget = true;
+  window.__wtmWidgetVer = 'press-drag-v2';
   var sx, sy, rx, ry, dragging = false;
   function btn(right) {
     var b = document.createElement('div');

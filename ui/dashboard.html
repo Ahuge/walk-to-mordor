@@ -381,6 +381,11 @@ async function tick() {
   lastWalking = !!s.walking;
   const tg = document.getElementById('btn-toggle');
   if (tg && !tg.dataset.armed) tg.textContent = s.walking ? '⏹' : '▶';
+  // Clear a stale arm if the belt started by other means.
+  if (tg && tg.dataset.armed && s.walking) {
+    delete tg.dataset.armed;
+    tg.style.background = '';
+  }
 }
 
 async function loadMarches() {
@@ -458,11 +463,36 @@ function toast(msg) {
 }
 // −/+ while walking adjusts speed live. At rest the pad takes no targets,
 // so offer to start the belt at the new speed instead of silently queuing.
+function inlineConfirm(btn, label, action) {
+  // Two-step inline confirm for the widget (native confirm() is too wide).
+  if (btn.dataset.armed) {
+    delete btn.dataset.armed;
+    btn.style.background = '';
+    clearTimeout(btn._armTimer);
+    if (btn._origText) btn.textContent = btn._origText;
+    action();
+  } else {
+    btn.dataset.armed = '1';
+    btn.style.background = '#8c3b2e';
+    btn._origText = btn.textContent;
+    btn.textContent = label;
+    btn._armTimer = setTimeout(() => {
+      delete btn.dataset.armed;
+      btn.style.background = '';
+      if (btn._origText) btn.textContent = btn._origText;
+    }, 3000);
+  }
+}
 function nudge(delta) {
   const base = lastSpeed > 0.05 ? lastSpeed : 2.0;
   const kmh = Math.max(0.5, Math.round((base + delta) * 2) / 2);
   if (lastSpeed > 0.05) {
     cmd('set_speed', {kmh});
+  } else if (document.body.classList.contains('widget')) {
+    const btn = document.getElementById(delta > 0 ? 'btn-faster' : 'btn-slower');
+    inlineConfirm(btn, `Start ${kmh.toFixed(1)}?`, () => {
+      (async () => { if (await cmd('set_speed', {kmh})) await cmd('start'); })();
+    });
   } else if (confirm(`Start the belt at ${kmh.toFixed(1)} km/h? Area clear, safety key in?`)) {
     (async () => { if (await cmd('set_speed', {kmh})) await cmd('start'); })();
   }
@@ -474,26 +504,10 @@ document.getElementById('btn-stop').onclick = () => cmd('stop');
 document.getElementById('btn-slower').onclick = () => nudge(-0.5);
 document.getElementById('btn-faster').onclick = () => nudge(0.5);
 let lastWalking = false;
-let armTimer = null;
 document.getElementById('btn-toggle').onclick = () => {
   const tg = document.getElementById('btn-toggle');
   if (lastWalking) { cmd('stop'); return; }
-  // Two-step inline confirm (native confirm() is too wide for the widget).
-  if (tg.dataset.armed) {
-    delete tg.dataset.armed;
-    tg.style.background = '';
-    clearTimeout(armTimer);
-    cmd('start');
-  } else {
-    tg.dataset.armed = '1';
-    tg.style.background = '#8c3b2e';
-    tg.textContent = 'Sure?';
-    armTimer = setTimeout(() => {
-      delete tg.dataset.armed;
-      tg.style.background = '';
-      if (tg) tg.textContent = lastWalking ? '⏹' : '▶';
-    }, 3000);
-  }
+  inlineConfirm(tg, 'Sure?', () => cmd('start'));
 };
 
 init();
