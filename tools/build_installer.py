@@ -42,6 +42,12 @@ def find_iscc() -> Path:
 def main() -> None:
     if sys.platform != "win32":
         sys.exit("the installer must be built on Windows")
+    # Version from --version flag, else the .iss default.
+    version = None
+    if "--version" in sys.argv:
+        i = sys.argv.index("--version")
+        if i + 1 < len(sys.argv):
+            version = sys.argv[i + 1]
     print("=== building daemon exe ===")
     subprocess.run([sys.executable, "tools/build_daemon_exe.py"],
                    cwd=REPO, check=True)
@@ -50,8 +56,12 @@ def main() -> None:
                    cwd=REPO, check=True)
     iscc = find_iscc()
     print(f"=== building installer with {iscc} ===")
-    subprocess.run([str(iscc), str(REPO / "installer" / "walk-to-mordor.iss")],
-                   cwd=REPO, check=True)
+    iscc_cmd = [str(iscc), str(REPO / "installer" / "walk-to-mordor.iss")]
+    if version:
+        # Override the #define in the .iss
+        iscc_cmd.insert(1, f"/DMyAppVersion={version}")
+        print(f"version: {version}")
+    subprocess.run(iscc_cmd, cwd=REPO, check=True)
     setups = sorted((REPO / "dist").glob("WalkToMordorSetup-*.exe"))
     if setups:
         print(f"done: {setups[-1]}")

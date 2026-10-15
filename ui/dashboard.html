@@ -80,6 +80,7 @@
   body.widget #map { height:calc(100vh - 62px); min-height:0; border-radius:0; }
   body.widget aside { min-width:0; }
   body.widget #journey-card, body.widget #march-card { display:none; }
+  body.widget #advanced-card { display:none; }
   body.widget #belt-card { border-radius:0; padding:6px; height:62px; box-sizing:border-box;
     display:flex; gap:6px; }
   body.widget #belt-card h2 { display:none; }
@@ -155,6 +156,10 @@
       <h2>Steps</h2>
       <div id="steps-today">…</div>
       <div id="steps-graph"></div>
+    </div>
+    <div class="card" id="advanced-card">
+      <h2>Advanced <span style="font-weight:normal;font-size:12px;color:#9a8c6d">(BLE)</span></h2>
+      <div id="ble-status" style="font-size:13px;line-height:1.6">…</div>
     </div>
   </aside>
 </main>
@@ -391,6 +396,17 @@ async function tick() {
   if (ms) ms.textContent =
     `${s.walking ? `Walking ${spd} km/h` : 'At rest'} · ` +
     `Leg ${s.leg_index + 1}/${s.leg_count} · ${s.today_km.toFixed(1)} km today`;
+  // Advanced: BLE connection state (fullscreen only).
+  if (s.ble) {
+    const b = s.ble;
+    const dot = b.connected ? '🟢' : '🔴';
+    const bleEl = document.getElementById('ble-status');
+    if (bleEl) bleEl.innerHTML =
+      `${dot} ${b.connected ? 'Connected' : 'Disconnected'}` +
+      (b.device_name ? ` · ${b.device_name} (${b.device_address || '?'})` : '') +
+      `<br>Last reading: ${b.last_reading_ts || 'none yet'}` +
+      (b.last_error ? `<br><span style="color:#e08080">${b.last_error}</span>` : '');
+  }
   lastWalking = !!s.walking;
   const tg = document.getElementById('btn-toggle');
   if (tg && !tg.dataset.armed) tg.textContent = s.walking ? '⏹' : '▶';

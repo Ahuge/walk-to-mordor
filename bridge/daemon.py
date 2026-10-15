@@ -294,6 +294,14 @@ class _ApiHandler(BaseHTTPRequestHandler):
     # would POST back to this same server (infinite regress).
     db = None
     lock = None
+    # BLE connection state, updated by the connection loop, read by /api/stats.
+    ble_state = {
+        "connected": False,
+        "device_name": None,
+        "device_address": None,
+        "last_error": None,
+        "last_reading_ts": None,
+    }
 
     def log_message(self, *args):  # quiet
         pass
@@ -373,6 +381,7 @@ class _ApiHandler(BaseHTTPRequestHandler):
             if path == "/api/stats":
                 s = snapshot_from_db()
                 s["source"] = "api"
+                s["ble"] = dict(Handler.ble_state)
                 self._send_json(s)
             elif path.startswith("/api/commands/"):
                 try:
@@ -482,13 +491,18 @@ async def run() -> None:
     while not stop_requested.is_set():
         found = await find_pad("URTM", quiet=True)
         if found is None:
+            Handler.ble_state["connected"] = False
             await sleep_or_stop(SCAN_PAUSE_S)
             continue
         device, name = found
+        Handler.ble_state["device_name"] = name
+        Handler.ble_state["device_address"] = device.address
         log.info("pad found: %s (%s)", name, device.address)
         try:
             async with BleakClient(device) as client:
                 log.info("connected")
+                Handler.ble_state["connected"] = True
+                Handler.ble_state["last_error"] = None
                 state = {"row": {}}
                 controller = TreadmillController(
                     client,
@@ -503,6 +517,7 @@ async def run() -> None:
                 def on_notify(_sender, data: bytearray):
                     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
                     row = parse_treadmill_data(bytes(data))
+                    Handler.ble_state["last_reading_ts"] = ts
                     with lock:
                         db.execute(
                             "INSERT OR IGNORE INTO readings"
@@ -536,8 +551,11 @@ async def run() -> None:
                             pass
                 if not client.is_connected:
                     log.info("disconnected")
+                    Handler.ble_state["connected"] = False
         except Exception:  # noqa: BLE001
             log.exception("connection error")
+            Handler.ble_state["connected"] = False
+            Handler.ble_state["last_error"] = "connection error (see daemon log)"
         finally:
             tracker.finish(datetime.now(timezone.utc))
         await sleep_or_stop(5)
