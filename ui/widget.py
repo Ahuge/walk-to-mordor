@@ -202,6 +202,32 @@ class Api:
             pass
 
 
+def _make_borderless():
+    """Strip the title bar / thick frame via Win32 for a borderless look.
+
+    We do this instead of pywebview's frameless=True because pywebview
+    6.x's frameless mode moves the window on any drag (bug).
+    """
+    try:
+        import ctypes
+
+        hwnd = _widget_hwnd()
+        if not hwnd:
+            return
+        u32 = ctypes.windll.user32
+        GWL_STYLE = -16
+        WS_CAPTION = 0x00C00000
+        WS_THICKFRAME = 0x00040000
+        style = u32.GetWindowLongW(hwnd, GWL_STYLE)
+        style &= ~(WS_CAPTION | WS_THICKFRAME)
+        u32.SetWindowLongW(hwnd, GWL_STYLE, style)
+        # SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED
+        u32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0027)
+        _dbg("made borderless via Win32")
+    except Exception as e:
+        _dbg(f"borderless failed: {e}")
+
+
 def _move_bottom_right():
     """Position bottom-right of the work area (screen minus taskbar)."""
     try:
@@ -312,22 +338,24 @@ def main() -> None:
     _dbg("widget.py starting (press-drag-v2 + jslog)")
     framed = "--framed" in sys.argv
     api = Api()
-    # Keep create_window minimal: frameless windows are quirky in
-    # pywebview's WinForms backend, so positioning is done via Win32
-    # after load, not through pywebview's own x/y properties.
+    # NOTE: frameless=False — pywebview 6.x's frameless mode drags the
+    # window on any mouse drag (bug). We strip the chrome via Win32
+    # instead (_make_borderless) for a borderless look without the bug.
     win = webview.create_window(
         TITLE,
         URL,
         width=WIDTH,
         height=HEIGHT,
         min_size=(240, 200),
-        frameless=not framed,
+        frameless=False,
         on_top=True,
         js_api=api,
     )
 
     def on_loaded():
         _move_bottom_right()
+        if not framed:
+            _make_borderless()
         try:
             win.evaluate_js(DRAG_JS)
         except Exception:
