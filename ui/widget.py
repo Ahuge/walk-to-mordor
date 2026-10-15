@@ -56,6 +56,14 @@ DRAG_JS = """
   x.style.cursor = 'pointer';
   x.textContent = '\\u00d7';
   x.onclick = function() { window.pywebview.api.close(); };
+  // Open full dashboard in the default browser.
+  var www = btn(51);
+  www.title = 'Open in browser';
+  www.style.cursor = 'pointer';
+  www.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none"'
+    + ' stroke="#f3e9d2" stroke-width="2.4" stroke-linecap="round">'
+    + '<path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg>';
+  www.onclick = function() { window.pywebview.api.open_browser(); };
   // Resize grip, bottom-right.
   var grip = document.createElement('div');
   grip.title = 'Resize';
@@ -119,6 +127,13 @@ class Api:
 
     def jslog(self, msg):
         _dbg(f"js: {msg}")
+
+    def open_browser(self):
+        import webbrowser
+        try:
+            webbrowser.open("http://127.0.0.1:8471/")
+        except Exception as e:
+            _dbg(f"open_browser failed: {e}")
 
     def _pos(self):
         import ctypes

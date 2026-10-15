@@ -383,6 +383,21 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 s["source"] = "api"
                 s["ble"] = dict(Handler.ble_state)
                 self._send_json(s)
+            elif path == "/api/log":
+                try:
+                    n = int(parse_qs(parsed.query).get("n", ["50"])[0])
+                except ValueError:
+                    n = 50
+                n = max(1, min(200, n))
+                log_file = data_dir() / "daemon.log"
+                lines = []
+                if log_file.exists():
+                    with open(log_file, encoding="utf-8", errors="replace") as f:
+                        lines = f.readlines()[-n:]
+                self._send_json({"lines": [l.rstrip("\n") for l in lines]})
+            elif path == "/advanced":
+                return self._serve_repo_file("ui/advanced.html",
+                                             "text/html; charset=utf-8")
             elif path.startswith("/api/commands/"):
                 try:
                     cmd_id = int(path.rsplit("/", 1)[-1])

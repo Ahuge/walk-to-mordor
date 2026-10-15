@@ -54,6 +54,9 @@ def main() -> None:
     print("=== building widget exe ===")
     subprocess.run([sys.executable, "tools/build_widget_exe.py"],
                    cwd=REPO, check=True)
+    print("=== building nudge exe ===")
+    subprocess.run([sys.executable, "tools/build_nudge_exe.py"],
+                   cwd=REPO, check=True)
     iscc = find_iscc()
     print(f"=== building installer with {iscc} ===")
     iscc_cmd = [str(iscc), str(REPO / "installer" / "walk-to-mordor.iss")]

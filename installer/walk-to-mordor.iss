@@ -25,6 +25,7 @@ DisableDirPage=no
 [Files]
 Source: "..\dist\WalkToMordorDaemon.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorWidget.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\WalkToMordorNudge.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Walk to Mordor Dashboard"; Filename: "http://127.0.0.1:8471/"
@@ -40,10 +41,15 @@ Filename: "schtasks"; \
 Filename: "schtasks"; \
   Parameters: "/create /tn ""WalkToMordorWidget"" /tr ""\""{app}\WalkToMordorWidget.exe\"""" /sc onlogon /delay 0000:30 /rl limited /f"; \
   Flags: runhidden; StatusMsg: "Registering widget…"
+; Daily nudge at 11am if no walk yet.
+Filename: "schtasks"; \
+  Parameters: "/create /tn ""WalkToMordorNudge"" /tr ""\""{app}\WalkToMordorNudge.exe\"""" /sc daily /st 11:00 /rl limited /f"; \
+  Flags: runhidden; StatusMsg: "Registering daily reminder…"
 
 [UninstallRun]
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordor"" /f"; Flags: runhidden
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordorWidget"" /f"; Flags: runhidden
+Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordorNudge"" /f"; Flags: runhidden
 
 [Code]
 function InitializeSetup(): Boolean;

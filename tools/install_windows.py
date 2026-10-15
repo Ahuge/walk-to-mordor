@@ -3,11 +3,13 @@
 
 The daemon task runs at every logon under pythonw (no console window)
 and keeps the BLE bridge alive in the background. The optional widget
-task launches the floating map widget after the daemon is up.
+task launches the floating map widget after the daemon is up. The
+optional nudge task shows a daily reminder if no walk yet.
 
 Usage:
     python tools/install_windows.py              # install / refresh daemon
     python tools/install_windows.py --widget     # also auto-start the widget
+    python tools/install_windows.py --nudge      # also daily walk reminder
     python tools/install_windows.py --minimap    # also auto-start the minimap
     python tools/install_windows.py --uninstall  # remove
 """
@@ -18,7 +20,23 @@ from pathlib import Path
 
 TASK_NAME = "WalkToMordor"
 WIDGET_TASK_NAME = "WalkToMordorWidget"
+NUDGE_TASK_NAME = "WalkToMordorNudge"
 MINIMAP_TASK_NAME = "WalkToMordorMinimap"
+
+
+def _create_daily_task(name: str, target: Path, time: str) -> None:
+    """Daily task at HH:MM (24h)."""
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    if not pythonw.exists():
+        sys.exit(f"pythonw.exe not found next to {sys.executable}")
+    task_run = f'"{pythonw}" "{target}"'
+    subprocess.run(
+        ["schtasks", "/create", "/tn", name, "/tr", task_run,
+         "/sc", "daily", "/st", time, "/rl", "limited", "/f"],
+        check=True,
+    )
+    print(f"installed: daily task '{name}' at {time}")
+    print(f"  runs: {task_run}")
 
 
 def _create_task(name: str, target: Path, delay_s: int = 0) -> None:
@@ -52,7 +70,8 @@ def _ensure_widget_exe(repo: Path) -> Path:
 
 def main() -> None:
     if "--uninstall" in sys.argv:
-        for name in (TASK_NAME, WIDGET_TASK_NAME, MINIMAP_TASK_NAME):
+        for name in (TASK_NAME, WIDGET_TASK_NAME, NUDGE_TASK_NAME,
+                     MINIMAP_TASK_NAME):
             subprocess.run(
                 ["schtasks", "/delete", "/tn", name, "/f"], check=False)
         print("tasks removed (if they existed)")
@@ -68,6 +87,11 @@ def main() -> None:
     if "--widget" in sys.argv:
         exe = _ensure_widget_exe(repo)
         _create_task(WIDGET_TASK_NAME, exe, delay_s=30)
+    if "--nudge" in sys.argv:
+        nudge = repo / "tools" / "nudge.py"
+        if not nudge.exists():
+            sys.exit(f"nudge not found: {nudge}")
+        _create_daily_task(NUDGE_TASK_NAME, nudge, "11:00")
     if "--minimap" in sys.argv:
         minimap = repo / "ui" / "minimap.py"
         if not minimap.exists():
