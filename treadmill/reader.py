@@ -79,6 +79,7 @@ def parse_treadmill_data(raw: bytes) -> dict:
 
 
 async def find_pad(name_hint: str, quiet: bool = False):
+    """Scan for the pad. Returns (device, display_name) or None."""
     if not quiet:
         print("Scanning for the treadmill (10s)...")
     found: dict = {}
@@ -90,26 +91,28 @@ async def find_pad(name_hint: str, quiet: bool = False):
         await asyncio.sleep(10.0)
 
     hint = name_hint.upper()
-    ftms_fallback = None
+    fallback = None
     for address, (d, adv) in found.items():
-        name = (d.name or adv.local_name or "").upper()
+        display = d.name or adv.local_name or "pad"
+        name = display.upper()
         uuids = [u.lower() for u in (adv.service_uuids or [])]
         is_ftms = FTMS_UUID in uuids
         if hint in name or (is_ftms and ("URTM" in name or "UREVO" in name)):
-            return d
-        if is_ftms and ftms_fallback is None:
-            ftms_fallback = d
-    return ftms_fallback
+            return d, display
+        if is_ftms and fallback is None:
+            fallback = (d, display)
+    return fallback
 
 
 async def stream(csv_path: str | None, name_hint: str) -> None:
-    device = await find_pad(name_hint)
-    if device is None:
+    found = await find_pad(name_hint)
+    if found is None:
         print("Pad not found. Power-cycle the treadmill and retry "
               "(it advertises only briefly after power-on).")
         sys.exit(1)
+    device, name = found
 
-    print(f"Found {device.name} ({device.address}) — connecting...")
+    print(f"Found {name} ({device.address}) — connecting...")
     csv_file = open(csv_path, "a", newline="") if csv_path else None
     writer = None
 

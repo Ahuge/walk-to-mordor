@@ -115,17 +115,19 @@ class MarchTracker:
         now = datetime.now(timezone.utc)
         speed = row.get("speed_kmh") or 0.0
         if not self.in_march:
-            if speed > SPEED_THRESHOLD_KMH:
-                self.in_march = True
-                self.start_ts = ts
-                self.start_dt = now
-                self.first = row
-                self.last_motion = now
-                self.speed_sum = 0.0
-                self.speed_n = 0
-                self.max_incline = 0.0
-                log.info("march started")
-                return
+            if speed <= SPEED_THRESHOLD_KMH:
+                return  # belt idle and no march open: nothing to do
+            self.in_march = True
+            self.start_ts = ts
+            self.start_dt = now
+            self.first = row
+            self.last = row
+            self.last_motion = now
+            self.speed_sum = 0.0
+            self.speed_n = 0
+            self.max_incline = 0.0
+            log.info("march started")
+            return
         # in a march: track stats, watch for the belt stopping
         self.last = row
         if speed > SPEED_THRESHOLD_KMH:
@@ -149,6 +151,12 @@ class MarchTracker:
             steps = max(0, last["steps"] - first["steps"])
         avg_speed = round(self.speed_sum / self.speed_n, 2) if self.speed_n else 0.0
         duration = max(0, int((end_dt - self.start_dt).total_seconds()))
+        if duration < 5 and dist == 0:
+            log.info("ignoring trivial march (<5s, 0m)")
+            self.in_march = False
+            self.first = {}
+            self.last = {}
+            return
         with self.lock:
             self.db.execute(
                 "INSERT INTO marches (started_at, ended_at, duration_s,"
@@ -196,11 +204,12 @@ async def run() -> None:
     signal.signal(signal.SIGTERM, on_signal)
 
     while not stop_requested.is_set():
-        device = await find_pad("URTM", quiet=True)
-        if device is None:
+        found = await find_pad("URTM", quiet=True)
+        if found is None:
             await sleep_or_stop(SCAN_PAUSE_S)
             continue
-        log.info("pad found: %s (%s)", device.name, device.address)
+        device, name = found
+        log.info("pad found: %s (%s)", name, device.address)
         try:
             async with BleakClient(device) as client:
                 log.info("connected")
