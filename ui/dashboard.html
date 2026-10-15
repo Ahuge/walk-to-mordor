@@ -333,7 +333,7 @@ async function tick() {
   if (!s || s.error || typeof s.journey_frac !== 'number') return;
   lastSpeed = s.speed_kmh || 0;
   const pos = pointAt(s.journey_frac * totalPx);
-  const moved = !lastPos || !pos.equals(lastPos);
+  const moved = !lastPos || pos[0] !== lastPos[0] || pos[1] !== lastPos[1];
   lastPos = pos;
   token.setLatLng(pos);
   if (document.body.classList.contains('widget') && pos) {

@@ -27,6 +27,7 @@ def main() -> None:
         ("packs/lotr/art/paths.json", "packs/lotr/art"),
         ("packs/lotr/art/journey.json", "packs/lotr/art"),
         ("packs/lotr/art/icon.png", "packs/lotr/art"),
+        ("packs/lotr/art/icons", "packs/lotr/art/icons"),
         ("packs/lotr/route.json", "packs/lotr"),
     ]
     cmd = [
