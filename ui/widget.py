@@ -233,7 +233,13 @@ def _widget_hwnd():
 
 
 def _set_window_icon():
-    """Best-effort: give the widget window our icon on Windows."""
+    """Best-effort: give the widget window our icon on Windows.
+
+    Skipped for frozen (PyInstaller) builds — the icon is baked into
+    the exe itself.
+    """
+    if getattr(sys, "frozen", False):
+        return
     try:
         import ctypes
         icon = Path(__file__).resolve().parent.parent / "packs" / "lotr" / "art" / "icon.ico"
