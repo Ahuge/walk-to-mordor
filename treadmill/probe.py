@@ -18,7 +18,7 @@ import asyncio
 
 from bleak import BleakClient, BleakScanner
 
-FTMS_UUID = "00001826-0000-1000-8000-00805f9a34fb"
+FTMS_UUID = "00001826-0000-1000-8000-00805f9b34fb"
 
 
 async def main() -> None:

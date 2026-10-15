@@ -27,8 +27,8 @@ from datetime import datetime, timezone
 
 from bleak import BleakClient, BleakScanner
 
-FTMS_UUID = "00001826-0000-1000-8000-00805f9a34fb"
-TREADMILL_DATA_UUID = "00002acd-0000-1000-8000-00805f9a34fb"
+FTMS_UUID = "00001826-0000-1000-8000-00805f9b34fb"
+TREADMILL_DATA_UUID = "00002acd-0000-1000-8000-00805f9b34fb"
 
 # FTMS Treadmill Data flag bits (Bluetooth SIG). Bit 13 is RFU in the spec;
 # UREVO uses it for a proprietary step counter (uint24 appended at the end).
