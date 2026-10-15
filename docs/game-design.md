@@ -204,8 +204,9 @@ it sidesteps any map-copyright issues.
                                                            └──────────┘
 ```
 
-- **bridge/** (this repo, Phase 0): `treadmill/probe.py`, `treadmill/reader.py`
-  → append to `walks.db` (SQLite): timestamped 1/sec rows + march summaries.
+- **bridge/**: `treadmill/probe.py` + `treadmill/reader.py` (Phase 0,
+  manual runs) and `bridge/daemon.py` (Phase 1: auto-connect background
+  process → `walks.db` with 1/sec `readings` + per-march `marches` tables).
 - **engine/** (Phase 1–2): consumes the DB; owns lifetime odometer, marches,
   campaign state, quest types (journey/target/streak), encounter RNG,
   XP/levels, journal. Pure Python, testable, pack-agnostic.

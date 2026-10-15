@@ -26,6 +26,35 @@ python treadmill/reader.py --csv walks.csv
 
 The reader is **read-only**: it never sends belt control commands.
 
+## Daemon (Phase 1) — always-on background bridge
+
+`bridge/daemon.py` watches for the pad, auto-connects when you power it on,
+and logs everything to SQLite — 1/sec readings plus per-march summaries
+(start/end, distance, calories, steps, avg speed, max incline). Storage:
+
+- Windows: `%LOCALAPPDATA%\walk-to-mordor\walks.db` (log: `daemon.log` alongside)
+- Other: `~/.walk-to-mordor/`
+
+A march starts when the belt moves and ends after 60 s of no motion (or on
+disconnect). The `meta` table is reserved for future state (e.g. nudge bookkeeping).
+
+```powershell
+# 1. Run in the foreground first to verify it works:
+python bridge/daemon.py
+
+# 2. Install as a logon task (pythonw, no console window):
+python tools/install_windows.py
+
+# 3. Start it now without logging off:
+schtasks /run /tn "WalkToMordor"
+
+# Remove it:
+python tools/install_windows.py --uninstall
+```
+
+March summaries are the source for everything next: the nudge ("active on
+PC, no march today") and the minimap overlay both read `walks.db`.
+
 ## Troubleshooting
 
 **`BleakDBusError: org.bluez was not provided` (WSL):** you're running inside

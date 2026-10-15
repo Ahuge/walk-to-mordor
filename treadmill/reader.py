@@ -78,8 +78,9 @@ def parse_treadmill_data(raw: bytes) -> dict:
     return p
 
 
-async def find_pad(name_hint: str):
-    print("Scanning for the treadmill (10s)...")
+async def find_pad(name_hint: str, quiet: bool = False):
+    if not quiet:
+        print("Scanning for the treadmill (10s)...")
     found: dict = {}
 
     def on_detect(device, adv):
