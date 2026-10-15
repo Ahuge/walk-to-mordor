@@ -30,7 +30,15 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+def repo_root() -> Path:
+    """Repo root, working for both source runs and PyInstaller bundles."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
+
+sys.path.insert(0, str(repo_root()))
 
 from bleak import BleakClient  # noqa: E402
 
@@ -291,7 +299,7 @@ class _ApiHandler(BaseHTTPRequestHandler):
         pass
 
     def _serve_repo_file(self, rel: str, content_type: str):
-        body = (Path(__file__).resolve().parent.parent / rel).read_bytes()
+        body = (repo_root() / rel).read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -334,7 +342,7 @@ class _ApiHandler(BaseHTTPRequestHandler):
                     "packs/lotr/art/icons/" + path[len("/icons/"):],
                     "image/svg+xml")
             if path == "/api/route":
-                route = (Path(__file__).resolve().parent.parent
+                route = (repo_root()
                          / "packs" / "lotr" / "route.json").read_text(
                              encoding="utf-8")
                 body = route.encode("utf-8")
