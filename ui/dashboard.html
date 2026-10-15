@@ -380,7 +380,7 @@ async function tick() {
     `Leg ${s.leg_index + 1}/${s.leg_count} · ${s.today_km.toFixed(1)} km today`;
   lastWalking = !!s.walking;
   const tg = document.getElementById('btn-toggle');
-  if (tg) tg.textContent = s.walking ? '⏹' : '▶';
+  if (tg && !tg.dataset.armed) tg.textContent = s.walking ? '⏹' : '▶';
 }
 
 async function loadMarches() {
@@ -474,9 +474,26 @@ document.getElementById('btn-stop').onclick = () => cmd('stop');
 document.getElementById('btn-slower').onclick = () => nudge(-0.5);
 document.getElementById('btn-faster').onclick = () => nudge(0.5);
 let lastWalking = false;
+let armTimer = null;
 document.getElementById('btn-toggle').onclick = () => {
-  if (lastWalking) cmd('stop');
-  else if (confirm('Belt will start shortly. Area clear, safety key in?')) cmd('start');
+  const tg = document.getElementById('btn-toggle');
+  if (lastWalking) { cmd('stop'); return; }
+  // Two-step inline confirm (native confirm() is too wide for the widget).
+  if (tg.dataset.armed) {
+    delete tg.dataset.armed;
+    tg.style.background = '';
+    clearTimeout(armTimer);
+    cmd('start');
+  } else {
+    tg.dataset.armed = '1';
+    tg.style.background = '#8c3b2e';
+    tg.textContent = 'Sure?';
+    armTimer = setTimeout(() => {
+      delete tg.dataset.armed;
+      tg.style.background = '';
+      if (tg) tg.textContent = lastWalking ? '⏹' : '▶';
+    }, 3000);
+  }
 };
 
 init();

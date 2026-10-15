@@ -67,6 +67,12 @@ DRAG_JS = """
     e.preventDefault(); e.stopPropagation();
   }, true);
   window.addEventListener('mousemove', function(e) {
+    // If no button is pressed, any drag state is stale — reset it.
+    if (e.buttons === 0) {
+      rx = undefined; sx = undefined; dragging = false;
+      hand.style.background = 'rgba(0,0,0,.5)';
+      return;
+    }
     if (rx !== undefined) window.pywebview.api.resizemove(e.screenX, e.screenY);
     else if (dragging && sx !== undefined)
       window.pywebview.api.dragmove(e.screenX, e.screenY);
