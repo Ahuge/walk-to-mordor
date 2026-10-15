@@ -155,7 +155,7 @@
 <script>
 const YTOP = 4334;
 let map, journey, cumPx, totalPx, token, fogLayers, fogHalos, lastPos = null, lastSpeed = 0;
-let routeLegs = [], lastTodaySteps = 0, followToken = false;
+let routeLegs = [], lastTodaySteps = 0, followToken = false, widgetInit = false;
 
 function fmtEta(h) {
   if (!isFinite(h) || h < 0) return '—';
@@ -315,13 +315,18 @@ async function tick() {
   if (!s || s.error || typeof s.journey_frac !== 'number') return;
   lastSpeed = s.speed_kmh || 0;
   const pos = pointAt(s.journey_frac * totalPx);
+  const moved = !lastPos || !pos.equals(lastPos);
   lastPos = pos;
   token.setLatLng(pos);
-  if (document.body.classList.contains('widget')) {
-    if (!followToken && pos) {
+  if (document.body.classList.contains('widget') && pos) {
+    if (!widgetInit) {
+      // Launch: center on the player once.
       map.setView(pos, Math.max(map.getZoom(), 0));
+      widgetInit = true;
       followToken = true;
-    } else if (followToken) {
+    } else if (followToken && moved) {
+      // Player moved: follow. Otherwise leave the view alone so the
+      // user can pan/zoom freely.
       map.panTo(pos);
     }
   }

@@ -17,30 +17,32 @@ URL = "http://127.0.0.1:8471/?widget=1"
 TITLE = "Walk to Mordor"
 WIDTH, HEIGHT = 320, 300
 
-# Drag handle + close button injected into the page (frameless windows
-# have no title bar). The hand button toggles "move mode": when on,
-# dragging moves the window; when off, the map pans normally.
+# Drag handle + close button + resize grip injected into the page
+# (frameless windows have no title bar). The hand is a press-and-drag
+# handle: hold it and drag to move the window. Otherwise the map pans.
 DRAG_JS = """
 (function() {
   if (window.__wtmWidget) return; window.__wtmWidget = true;
-  var moveMode = false, sx, sy;
+  var sx, sy, rx, ry, dragging = false;
   function btn(right) {
     var b = document.createElement('div');
     b.style.cssText = 'position:fixed;top:3px;right:' + right + 'px;z-index:10000;'
-      + 'cursor:pointer;color:#f3e9d2;background:rgba(0,0,0,.5);border-radius:9px;'
+      + 'color:#f3e9d2;background:rgba(0,0,0,.5);border-radius:9px;'
       + 'width:18px;height:18px;font-size:12px;line-height:18px;text-align:center;'
       + 'font-family:sans-serif;display:flex;align-items:center;justify-content:center;';
     document.body.appendChild(b);
     return b;
   }
   var hand = btn(28);
-  hand.title = 'Move window (click to toggle, Esc to stop)';
+  hand.title = 'Drag to move window';
+  hand.style.cursor = 'move';
   hand.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none"'
     + ' stroke="#f3e9d2" stroke-width="2.4" stroke-linecap="round">'
     + '<path d="M12 3v18M3 12h18M12 3L9 6m3-3l3 3M12 21l-3-3m3 3l3-3'
     + 'M3 12l3-3m-3 3l3 3M21 12l-3-3m3 3l-3 3"/></svg>';
   var x = btn(5);
   x.title = 'Close widget';
+  x.style.cursor = 'pointer';
   x.textContent = '\\u00d7';
   x.onclick = function() { window.pywebview.api.close(); };
   // Resize grip, bottom-right.
@@ -51,36 +53,29 @@ DRAG_JS = """
   grip.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18">'
     + '<path d="M18 0 L0 18 L18 18 Z" fill="rgba(243,233,210,.30)"/></svg>';
   document.body.appendChild(grip);
-  var rx, ry;
+  // Press-and-drag on the hand moves the window (no toggle state).
+  hand.addEventListener('mousedown', function(e) {
+    dragging = true;
+    sx = e.screenX; sy = e.screenY;
+    window.pywebview.api.dragstart(sx, sy);
+    hand.style.background = 'rgba(176,141,43,.9)';
+    e.preventDefault(); e.stopPropagation();
+  }, true);
   grip.addEventListener('mousedown', function(e) {
     rx = e.screenX; ry = e.screenY;
     window.pywebview.api.resizestart(rx, ry);
     e.preventDefault(); e.stopPropagation();
   }, true);
-  hand.onclick = function() {
-    moveMode = !moveMode;
-    hand.style.background = moveMode ? 'rgba(176,141,43,.9)' : 'rgba(0,0,0,.5)';
-    document.body.style.cursor = moveMode ? 'move' : '';
-  };
-  window.addEventListener('mousedown', function(e) {
-    if (!moveMode) return;
-    if (hand.contains(e.target) || x.contains(e.target)
-        || grip.contains(e.target)) return;
-    sx = e.screenX; sy = e.screenY;
-    window.pywebview.api.dragstart(sx, sy);
-    e.preventDefault(); e.stopPropagation();
-  }, true);
   window.addEventListener('mousemove', function(e) {
     if (rx !== undefined) window.pywebview.api.resizemove(e.screenX, e.screenY);
-    else if (moveMode && sx !== undefined)
+    else if (dragging && sx !== undefined)
       window.pywebview.api.dragmove(e.screenX, e.screenY);
   });
   window.addEventListener('mouseup', function() {
     rx = undefined; window.pywebview.api.resizeend();
-    sx = undefined; window.pywebview.api.dragend();
-  });
-  window.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && moveMode) hand.onclick();
+    sx = undefined; dragging = false;
+    window.pywebview.api.dragend();
+    hand.style.background = 'rgba(0,0,0,.5)';
   });
 })();
 """
@@ -226,7 +221,11 @@ def _widget_hwnd():
         buf = ctypes.create_unicode_buffer(n + 1)
         u32.GetWindowTextW(hwnd, buf, n + 1)
         if buf.value == TITLE:
-            found.append(hwnd)
+            # Prefer the visible window; keep hidden ones as fallback.
+            if u32.IsWindowVisible(hwnd):
+                found.insert(0, hwnd)
+            else:
+                found.append(hwnd)
         return True
 
     u32.EnumWindows(cb, 0)
