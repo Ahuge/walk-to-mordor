@@ -113,6 +113,9 @@ def open_db() -> sqlite3.Connection:
     a DB created by the Windows daemon stays WAL without re-setting it.
     """
     db = sqlite3.connect(data_dir() / "walks.db", check_same_thread=False)
+    # Several writers collide here (1/sec readings, API thread, CLI): wait
+    # for the lock instead of failing instantly with "database is locked".
+    db.execute("PRAGMA busy_timeout=5000;")
     if os.name == "nt":
         mode = db.execute("PRAGMA journal_mode;").fetchone()[0]
         if mode.lower() != "wal":

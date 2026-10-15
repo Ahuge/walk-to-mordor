@@ -381,6 +381,10 @@ async def run() -> None:
     lock = threading.Lock()
     db = open_db()
     tracker = MarchTracker(db, lock)
+    # Crash recovery: a command stuck in 'running' never got its result
+    # written; re-queue it so it isn't lost.
+    db.execute("UPDATE commands SET status='pending' WHERE status='running'")
+    db.commit()
     log.info("daemon started, db=%s", ddir / "walks.db")
 
     api_thread = threading.Thread(target=_serve_api_forever, daemon=True,
