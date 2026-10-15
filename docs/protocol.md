@@ -3,11 +3,25 @@
 Reverse-engineered from the community GATT dump of a **SpaceWalk 3S**
 (collected 2026-08-31 with `probe.py` during a real walk;
 see [ncr/omarchy-spacewalk](https://github.com/ncr/omarchy-spacewalk),
-`docs/gatt-dump.md`). The SpaceWalk **5L is not yet verified** — run
-`treadmill/probe.py` against it and compare — but everything below is
-standard Bluetooth FTMS plus one small vendor extension, and the 5L's
-headline specs (0–9% auto incline, same app ecosystem) line up exactly
-with what the 3S exposes. Expectation: it matches.
+`docs/gatt-dump.md`). The SpaceWalk **5L was verified live on 2026-10-15**
+(device `URTM054`) — FTMS layout matches; see "5L verification" below.
+
+## SpaceWalk 5L verification (2026-10-15, device `URTM054`)
+
+Probed live via `treadmill/probe.py`:
+
+- FTMS `0x1826` present with the full characteristic set: `2acc` (Feature),
+  `2acd` (Treadmill Data, notify), `2ad3` (Training Status),
+  `2ad4`/`2ad5`/`2ad7` (supported speed/inclination/HR ranges),
+  `2ad9` (Control Point, write+indicate), `2ada` (Machine Status, notify).
+  Matches the 3S layout — `reader.py` should work unmodified.
+- Same vendor services as the 3S (`fff0` notify/write, `fee0` Huami
+  leftovers), **plus** one extra unknown service
+  `5833ff01-9b8b-5191-6142-22a4536ef123` (write + notify chars) not in the
+  3S dump. Purpose unknown; not needed for the read path.
+- Advertisement carries the **name only** (`URTM054`) — no FTMS service
+  UUID in the adv payload. Discovery keys off the `URTM`/`UREVO` name hint
+  (which is why probe.py scores name matches).
 
 ## Device (3S, as dumped)
 
