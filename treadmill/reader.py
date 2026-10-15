@@ -80,19 +80,25 @@ def parse_treadmill_data(raw: bytes) -> dict:
 
 async def find_pad(name_hint: str):
     print("Scanning for the treadmill (10s)...")
-    devices = await BleakScanner.discover(timeout=10.0)
+    found: dict = {}
+
+    def on_detect(device, adv):
+        found[device.address] = (device, adv)
+
+    async with BleakScanner(on_detect):
+        await asyncio.sleep(10.0)
+
     hint = name_hint.upper()
-    for d in devices:
-        name = (d.name or "").upper()
-        uuids = [u.lower() for u in (d.metadata.get("uuids") or [])]
-        if hint in name or (FTMS_UUID in uuids and ("URTM" in name or "UREVO" in name)):
+    ftms_fallback = None
+    for address, (d, adv) in found.items():
+        name = (d.name or adv.local_name or "").upper()
+        uuids = [u.lower() for u in (adv.service_uuids or [])]
+        is_ftms = FTMS_UUID in uuids
+        if hint in name or (is_ftms and ("URTM" in name or "UREVO" in name)):
             return d
-    # fallback: any FTMS advertiser
-    for d in devices:
-        uuids = [u.lower() for u in (d.metadata.get("uuids") or [])]
-        if FTMS_UUID in uuids:
-            return d
-    return None
+        if is_ftms and ftms_fallback is None:
+            ftms_fallback = d
+    return ftms_fallback
 
 
 async def stream(csv_path: str | None, name_hint: str) -> None:

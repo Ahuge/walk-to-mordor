@@ -9,6 +9,9 @@ Usage:
     1. Power-cycle the treadmill (it advertises BLE only briefly after power-on).
     2. Keep the UREVO phone app closed / phone Bluetooth off.
     3. python treadmill/probe.py
+
+Note: on Windows, run this in native Windows Python, not WSL
+(WSL can't see the Bluetooth adapter).
 """
 
 import asyncio
@@ -20,12 +23,18 @@ FTMS_UUID = "00001826-0000-1000-8000-00805f9a34fb"
 
 async def main() -> None:
     print("Scanning for BLE devices (10s) — power-cycle the pad if nothing shows...")
-    devices = await BleakScanner.discover(timeout=10.0)
+    found: dict = {}
+
+    def on_detect(device, adv):
+        found[device.address] = (device, adv)
+
+    async with BleakScanner(on_detect):
+        await asyncio.sleep(10.0)
 
     candidates = []
-    for d in devices:
-        name = (d.name or "").upper()
-        uuids = [u.lower() for u in (d.metadata.get("uuids") or [])]
+    for address, (d, adv) in found.items():
+        name = (d.name or adv.local_name or "").upper()
+        uuids = [u.lower() for u in (adv.service_uuids or [])]
         score = 0
         if FTMS_UUID in uuids:
             score += 2
