@@ -3,6 +3,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from typing import Optional
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS readings (
@@ -42,9 +43,38 @@ CREATE INDEX IF NOT EXISTS idx_commands_status ON commands(status, id);
 """
 
 
+def _is_wsl() -> bool:
+    try:
+        return "microsoft" in Path("/proc/version").read_text().lower()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _wsl_windows_localappdata() -> Optional[Path]:
+    """Resolve the Windows %LOCALAPPDATA% from inside WSL, so the CLI and
+    the Windows daemon share one database no matter which side you run from."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["cmd.exe", "/c", "echo", "%LOCALAPPDATA%"],
+            capture_output=True, text=True, timeout=10)
+        win_path = out.stdout.strip()
+        if not win_path or "%" in win_path:
+            return None
+        out2 = subprocess.run(["wslpath", win_path],
+                              capture_output=True, text=True, timeout=10)
+        p = Path(out2.stdout.strip())
+        return p if p.is_dir() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def data_dir() -> Path:
     if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
         d = Path(os.environ["LOCALAPPDATA"]) / "walk-to-mordor"
+    elif _is_wsl():
+        win = _wsl_windows_localappdata()
+        d = (win / "walk-to-mordor") if win else (Path.home() / ".walk-to-mordor")
     else:
         d = Path.home() / ".walk-to-mordor"
     d.mkdir(parents=True, exist_ok=True)

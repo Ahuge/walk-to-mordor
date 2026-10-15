@@ -80,6 +80,26 @@ as stale. Speed/incline are clamped to the pad's reported supported range.
   belt doesn't reach them; a stopped belt queues targets for the next start
   instead of sending them (the pad ignores them otherwise).
 
+## Live stats & minimap
+
+`bridge/stats.py` reads `walks.db` — one snapshot, or a live terminal view:
+
+```bash
+python bridge/stats.py            # snapshot: leg, progress, today/total, streak
+python bridge/stats.py --watch    # refresh every 2 s (Ctrl-C to stop)
+```
+
+`ui/minimap.py` is the same stats in a tiny always-on-top window
+(tkinter, no extra dependencies), with Start / Stop / − / + belt buttons
+that queue commands for the daemon. Close the window to hide it.
+
+```powershell
+python ui/minimap.py      # console window (testing)
+pythonw ui/minimap.py     # no console
+# auto-start it at logon alongside the daemon:
+python tools/install_windows.py --minimap
+```
+
 ## Troubleshooting
 
 **`BleakDBusError: org.bluez was not provided` (WSL):** you're running inside

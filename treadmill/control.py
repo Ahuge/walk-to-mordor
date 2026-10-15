@@ -227,18 +227,23 @@ def show_status() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Queue belt-control commands")
+    flags = argparse.ArgumentParser(add_help=False)
+    flags.add_argument("--now", action="store_true",
+                       help="skip the start countdown")
+    flags.add_argument("--no-wait", action="store_true",
+                       help="don't wait for the daemon's result")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("start", help="start the belt (3-2-1 countdown)")
-    sub.add_parser("stop", help="stop the belt")
-    p_speed = sub.add_parser("speed", help="set target speed km/h")
+    sub.add_parser("start", parents=[flags],
+                   help="start the belt (3-2-1 countdown)")
+    sub.add_parser("stop", parents=[flags], help="stop the belt")
+    p_speed = sub.add_parser("speed", parents=[flags],
+                             help="set target speed km/h")
     p_speed.add_argument("kmh", type=float)
-    p_incline = sub.add_parser("incline", help="set target incline %")
+    p_incline = sub.add_parser("incline", parents=[flags],
+                               help="set target incline %")
     p_incline.add_argument("pct", type=float)
-    sub.add_parser("status", help="show recent commands")
-    ap.add_argument("--now", action="store_true",
-                    help="skip the start countdown")
-    ap.add_argument("--no-wait", action="store_true",
-                    help="don't wait for the daemon's result")
+    sub.add_parser("status", parents=[flags],
+                   help="show recent commands")
     args = ap.parse_args()
 
     if args.cmd == "status":
@@ -251,11 +256,16 @@ def main() -> None:
             print(f"belt starts in {i}...", flush=True)
             time.sleep(1)
 
-    ops = {"start": ("start", {}),
-           "stop": ("stop", {}),
-           "speed": ("set_speed", {"kmh": args.kmh}),
-           "incline": ("set_incline", {"pct": args.pct})}
-    op, op_args = ops[args.cmd]
+    if args.cmd == "start":
+        op, op_args = "start", {}
+    elif args.cmd == "stop":
+        op, op_args = "stop", {}
+    elif args.cmd == "speed":
+        op, op_args = "set_speed", {"kmh": args.kmh}
+    elif args.cmd == "incline":
+        op, op_args = "set_incline", {"pct": args.pct}
+    else:
+        ap.error(f"unknown command {args.cmd}")
     cmd_id = queue_command(op, op_args)
     print(f"queued #{cmd_id}: {op} {op_args or ''} "
           f"(db: {data_dir() / 'walks.db'})")
