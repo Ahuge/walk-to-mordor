@@ -304,6 +304,12 @@ def main() -> None:
             pass
     except ImportError:
         sys.exit("pywebview is not installed. Run:  pip install pywebview")
+    # Clear the debug log on startup so it's fresh.
+    try:
+        _DBG.unlink(missing_ok=True)
+    except Exception:
+        pass
+    _dbg("widget.py starting (press-drag-v2 + jslog)")
     framed = "--framed" in sys.argv
     api = Api()
     # Keep create_window minimal: frameless windows are quirky in
