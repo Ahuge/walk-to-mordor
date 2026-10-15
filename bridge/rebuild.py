@@ -35,12 +35,22 @@ def _parse(ts: str) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def _overlaps(start, end, covered) -> bool:
-    for a, b in covered:
-        if start.timestamp() < b.timestamp() + OVERLAP_PAD_S and \
-           end.timestamp() > a.timestamp() - OVERLAP_PAD_S:
-            return True
-    return False
+def _covered_by(start, end, seg_dist, covered):
+    """Return the march covering this segment, if any.
+
+    A segment counts as covered only if a march overlaps most of its time
+    range AND recorded most of its distance — a 0 m march row doesn't
+    'cover' a 772 m walk just because their timestamps touch.
+    """
+    seg_s = (end - start).total_seconds()
+    if seg_s <= 0:
+        return None
+    for a, b, d in covered:
+        overlap = (min(end.timestamp(), b.timestamp())
+                   - max(start.timestamp(), a.timestamp()))
+        if overlap > 0.8 * seg_s and d >= 0.5 * seg_dist:
+            return (a, b, d)
+    return None
 
 
 def _seg_stats(seg):
@@ -81,8 +91,8 @@ def main() -> None:
     apply = "--apply" in sys.argv
     db = open_db()
     try:
-        covered = [(_parse(a), _parse(b)) for a, b in db.execute(
-            "SELECT started_at, ended_at FROM marches").fetchall()]
+        covered = [( _parse(a), _parse(b), d) for a, b, d in db.execute(
+            "SELECT started_at, ended_at, distance_m FROM marches").fetchall()]
 
         # Is the daemon alive in a march right now? If so, the trailing
         # segment belongs to it (covered by open_march), not to us.
@@ -125,8 +135,11 @@ def main() -> None:
                 print(f"  skip (trivial): {tag}")
                 skipped += 1
                 continue
-            if _overlaps(start, end, covered):
-                print(f"  skip (already have a march): {tag}")
+            hit = _covered_by(start, end, st["distance_m"], covered)
+            if hit:
+                a, b, d = hit
+                print(f"  skip (march {a:%H:%M}–{b:%H:%M} already has {d} m):"
+                      f" {tag}")
                 skipped += 1
                 continue
             print(f"  {'INSERT' if apply else 'would insert'}: {tag}")
@@ -139,7 +152,7 @@ def main() -> None:
                      st["distance_m"], st["calories"], st["steps"],
                      st["avg_speed_kmh"], st["max_incline_pct"]),
                 )
-                covered.append((start, end))
+                covered.append((start, end, st["distance_m"]))
                 added += 1
         if apply:
             db.commit()

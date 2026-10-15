@@ -87,7 +87,7 @@
 <script src="/leaflet.js"></script>
 <script>
 const YTOP = 4334;
-let map, journey, cumPx, totalPx, token, fogCut, lastPos = null, lastSpeed = 0;
+let map, journey, cumPx, totalPx, token, fogLayers, fogHalos, lastPos = null, lastSpeed = 0;
 
 function pointAt(d) {
   d = Math.max(0, Math.min(totalPx, d));
@@ -110,21 +110,28 @@ async function init() {
   L.imageOverlay(journey.image, bounds).addTo(map);
   map.fitBounds(bounds);
 
-  L.polyline(journey.path, {color: '#b3401e', weight: 3, opacity: 0.85,
-                            dashArray: '2 7'}).addTo(map);
+  L.polyline(journey.path, {color: '#f5edd8', weight: 9, opacity: 0.9}).addTo(map);
+  L.polyline(journey.path, {color: '#b3401e', weight: 4.5, opacity: 0.95}).addTo(map);
 
-  // fog of war: dark overlay with a soft corridor cut along the visited path
+  // fog of war: dark overlay with a soft corridor cut along the visited
+  // path, plus a visibility halo around the token. Layered strokes fake
+  // the soft edge cheaply (no blur filters to re-render every tick).
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 5000 4344');
+  const fogStroke = (id, w, op) =>
+    `<polyline id="${id}" points="" fill="none" stroke="black" stroke-width="${w}" ` +
+    `stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`;
   svg.innerHTML =
-    '<defs><filter id="fogsoft" x="-20%" y="-20%" width="140%" height="140%">' +
-    '<feGaussianBlur stdDeviation="80"/></filter>' +
-    '<mask id="fogmask"><rect x="0" y="0" width="5000" height="4344" fill="white"/>' +
-    '<polyline id="fogcut" points="" fill="none" stroke="black" stroke-width="460" ' +
-    'stroke-linecap="round" stroke-linejoin="round" filter="url(#fogsoft)"/></mask></defs>' +
-    '<rect x="0" y="0" width="5000" height="4344" fill="#0b0b16" opacity="0.82" mask="url(#fogmask)"/>';
+    '<defs><mask id="fogmask"><rect x="0" y="0" width="5000" height="4344" fill="white"/>' +
+    fogStroke('fog1', 950, 0.45) + fogStroke('fog2', 680, 0.75) + fogStroke('fog3', 440, 1) +
+    '<circle id="halo1" r="850" fill="black" opacity="0.5"/>' +
+    '<circle id="halo2" r="520" fill="black" opacity="1"/>' +
+    '</mask></defs>' +
+    '<rect x="0" y="0" width="5000" height="4344" fill="#0b0b16" opacity="0.74" mask="url(#fogmask)"/>';
   L.svgOverlay(svg, bounds).addTo(map);
-  fogCut = svg.querySelector('#fogcut');
+  fogLayers = [svg.querySelector('#fog1'), svg.querySelector('#fog2'),
+               svg.querySelector('#fog3')];
+  fogHalos = [svg.querySelector('#halo1'), svg.querySelector('#halo2')];
 
   token = L.marker(journey.path[0], {interactive: false, icon: L.divIcon(
     {className: '', html: '<div class="tok"></div>', iconSize: [24,24], iconAnchor: [12,12]})
@@ -146,15 +153,18 @@ async function tick() {
   lastPos = pos;
   token.setLatLng(pos);
 
-  // fog: corridor along the visited portion of the path (image px coords)
+  // fog: corridor along the visited portion of the path (image px coords),
+  // plus a halo around the token so the nearby area is always readable
   const target = s.journey_frac * totalPx;
   let pts = '';
   for (let i = 0; i < cumPx.length && cumPx[i] <= target; i += 4) {
     const p = journey.path[i];
     pts += `${p[1].toFixed(0)},${(YTOP - p[0]).toFixed(0)} `;
   }
-  pts += `${pos[1].toFixed(0)},${(YTOP - pos[0]).toFixed(0)}`;
-  fogCut.setAttribute('points', pts);
+  const px = pos[1].toFixed(0), py = (YTOP - pos[0]).toFixed(0);
+  pts += `${px},${py}`;
+  for (const layer of fogLayers) layer.setAttribute('points', pts);
+  for (const halo of fogHalos) { halo.setAttribute('cx', px); halo.setAttribute('cy', py); }
 
   document.getElementById('status-line').textContent =
     s.walking ? `Walking @ ${s.speed_kmh.toFixed(1)} km/h` : 'At rest';
