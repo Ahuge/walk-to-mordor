@@ -109,6 +109,22 @@ open it in any browser on the machine:
 
 The page polls the API every 2 s; Leaflet is vendored, no CDN needed.
 
+## Recovering missed walks
+
+The pad only streams the *current* session over BLE — it keeps no
+history. `walks.db` is the historian: 1/sec readings plus march summaries.
+If the daemon was killed mid-walk (crash, task restart), the readings are
+there but no march row was written. Rebuild them (PowerShell):
+
+```powershell
+python bridge/rebuild.py            # dry run: show what would be added
+python bridge/rebuild.py --apply    # actually insert the marches
+```
+
+Segments already covered by a march are skipped, so it never double
+counts. Distances accumulate positive odometer deltas, so a pad session
+reset mid-walk doesn't zero the segment.
+
 Map credit: Yohann Bethoule / middleearthmap.app (base map by
 lotrproject.com) — used with the author's explicit permission for our own
 use. Assets vendored under `packs/lotr/art/` (map.webp, markers.json,
