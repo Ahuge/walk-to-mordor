@@ -112,11 +112,18 @@ def snapshot_from_db() -> dict:
         today_m, total_m, streak = march_stats(db)
         status, walking, speed = live_status(db)
         i, leg, frac = route_position(route, total_m)
+        legs = route["legs"]
+        total_mi = sum(l["distance"] for l in legs)
+        cum_mi = sum(l["distance"] for l in legs[:i])
+        journey_frac = ((cum_mi + frac * legs[i]["distance"]) / total_mi
+                        if total_mi else 0.0)
+        journey_frac = max(0.0, min(1.0, journey_frac))
         return {
             "leg_index": i,
             "leg_count": len(route["legs"]),
             "leg_name": leg["name"],
             "leg_frac": frac,
+            "journey_frac": journey_frac,
             "today_km": today_m / 1000,
             "total_km": total_m / 1000,
             "streak": streak,

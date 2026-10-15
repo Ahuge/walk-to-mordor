@@ -101,13 +101,18 @@ web dashboard (real map) will be served from this same API.
 The daemon serves the journey dashboard at <http://127.0.0.1:8471/> —
 open it in any browser on the machine:
 
-- Storybook SVG map of the route: terrain per leg, the road winding
-  through it, your party token moving live, fog-of-war lifting as you
-  reach each leg.
+- The actual Middle-earth map (pan/zoom, Leaflet), with our journey's road
+  drawn over it, your party token moving live, and fog-of-war lifting as
+  you walk.
 - Live stats (leg/progress, today/total, streak, belt status).
 - Belt controls (Start/Stop/speed) and the recent march log.
 
-The page polls the API every 2 s; no build step, no dependencies.
+The page polls the API every 2 s; Leaflet is vendored, no CDN needed.
+
+Map credit: Yohann Bethoule / middleearthmap.app (base map by
+lotrproject.com) — used with the author's explicit permission for our own
+use. Assets vendored under `packs/lotr/art/` (map.webp, markers.json,
+paths.json, journey.json).
 
 ## Live stats & minimap
 

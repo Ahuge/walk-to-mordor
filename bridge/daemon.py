@@ -273,6 +273,14 @@ class _ApiHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # quiet
         pass
 
+    def _serve_repo_file(self, rel: str, content_type: str):
+        body = (Path(__file__).resolve().parent.parent / rel).read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _send_json(self, obj, code=200):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
@@ -286,15 +294,18 @@ class _ApiHandler(BaseHTTPRequestHandler):
             parsed = urlparse(self.path)
             path = parsed.path
             if path == "/":
-                html = (Path(__file__).resolve().parent.parent
-                        / "ui" / "dashboard.html").read_text(encoding="utf-8")
-                body = html.encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
+                return self._serve_repo_file("ui/dashboard.html",
+                                             "text/html; charset=utf-8")
+            static = {
+                "/map.webp": ("packs/lotr/art/map.webp", "image/webp"),
+                "/journey.json": ("packs/lotr/art/journey.json",
+                                  "application/json"),
+                "/leaflet.js": ("ui/vendor/leaflet/leaflet.js",
+                                "text/javascript"),
+                "/leaflet.css": ("ui/vendor/leaflet/leaflet.css", "text/css"),
+            }
+            if path in static:
+                return self._serve_repo_file(*static[path])
             if path == "/api/route":
                 route = (Path(__file__).resolve().parent.parent
                          / "packs" / "lotr" / "route.json").read_text(
