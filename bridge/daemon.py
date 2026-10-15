@@ -31,12 +31,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
-def repo_root() -> Path:
-    """Repo root, working for both source runs and PyInstaller bundles."""
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS)
-    return Path(__file__).resolve().parent.parent
-
+from bridge.store import repo_root  # noqa: E402
 
 sys.path.insert(0, str(repo_root()))
 

@@ -23,8 +23,8 @@ REFRESH_S = 2
 
 
 def load_route(pack: str = "lotr") -> dict:
-    repo = Path(__file__).resolve().parent.parent
-    with open(repo / "packs" / pack / "route.json") as f:
+    from bridge.store import repo_root
+    with open(repo_root() / "packs" / pack / "route.json") as f:
         return json.load(f)
 
 

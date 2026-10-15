@@ -6,6 +6,13 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+
+def repo_root() -> Path:
+    """Repo root, working for both source runs and PyInstaller bundles."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS readings (
     ts TEXT PRIMARY KEY,
