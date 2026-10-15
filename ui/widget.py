@@ -49,20 +49,54 @@ DRAG_JS = """
 
 
 class Api:
-    """JS bridge: window dragging + close for the frameless window."""
+    """JS bridge: window dragging + close for the frameless window.
+
+    Window position goes through raw Win32 (FindWindow/GetWindowRect/
+    SetWindowPos) — pywebview's own x/y/move properties recurse on
+    frameless windows.
+    """
 
     def __init__(self):
         self.win = None
         self._drag = None
+        self._hwnd = None
+
+    def _hwnd_(self):
+        import ctypes
+
+        if not self._hwnd:
+            self._hwnd = ctypes.windll.user32.FindWindowW(None, TITLE)
+        return self._hwnd
+
+    def _pos(self):
+        import ctypes
+        from ctypes import wintypes
+
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(self._hwnd_(),
+                                          ctypes.byref(rect))
+        return rect.left, rect.top
 
     def dragstart(self, sx, sy):
-        if self.win:
-            self._drag = (sx, sy, self.win.x, self.win.y)
+        try:
+            wx, wy = self._pos()
+            self._drag = (sx, sy, wx, wy)
+        except Exception:
+            self._drag = None
 
     def dragmove(self, sx, sy):
-        if self.win and self._drag:
+        if not self._drag:
+            return
+        try:
+            import ctypes
+
             x0, y0, wx, wy = self._drag
-            self.win.move(wx + int(sx - x0), wy + int(sy - y0))
+            nx, ny = wx + int(sx - x0), wy + int(sy - y0)
+            # SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE
+            ctypes.windll.user32.SetWindowPos(self._hwnd_(), 0,
+                                              nx, ny, 0, 0, 0x0015)
+        except Exception:
+            pass
 
     def dragend(self):
         self._drag = None
