@@ -26,6 +26,15 @@ python treadmill/reader.py --csv walks.csv
 
 The reader is **read-only**: it never sends belt control commands.
 
+## Troubleshooting
+
+**`BleakDBusError: org.bluez was not provided` (WSL):** you're running inside
+Windows Subsystem for Linux, which can't see the Bluetooth adapter. Run the
+scripts in *native Windows Python* instead — the repo lives on a Windows
+drive, so open PowerShell, `cd` into it, `pip install bleak`,
+`python treadmill/probe.py`. No code changes needed; bleak picks the right
+Bluetooth backend per OS.
+
 ## How it works
 
 UREVO SpaceWalk pads expose the standard Bluetooth
