@@ -169,6 +169,9 @@ const widgetMQ = window.matchMedia('(max-width: 460px)');
 function applyWidgetMode() {
   const on = widgetMQ.matches || new URLSearchParams(location.search).has('widget');
   document.body.classList.toggle('widget', on);
+  // Belt: widget mode uses the single ▶/⏹ toggle, not Start/Stop.
+  const main = document.getElementById('btnrow-main');
+  if (main) main.style.display = on ? 'none' : '';
   if (map) setTimeout(() => map.invalidateSize(), 60);
 }
 widgetMQ.addEventListener('change', applyWidgetMode);
