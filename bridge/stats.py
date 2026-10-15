@@ -122,7 +122,8 @@ def format_snapshot(s: dict) -> str:
         f" {s['leg_name']}\n"
         f"[{bar}] {s['leg_frac'] * 100:.0f}%\n"
         f"Status: {s['status']}\n"
-        f"Today: {s['today_km']:.1f} km · Total: {s['total_km']:.1f} km{streak}"
+        f"Today: {s['today_km']:.1f} km · Total: {s['total_km']:.1f} km{streak}\n"
+        f"db: {s['db']}"
     )
 
 
