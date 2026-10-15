@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -50,10 +51,27 @@ def _is_wsl() -> bool:
         return False
 
 
-def _wsl_windows_localappdata() -> Optional[Path]:
-    """Resolve the Windows %LOCALAPPDATA% from inside WSL, so the CLI and
-    the Windows daemon share one database no matter which side you run from."""
+def _wsl_walk_to_mordor_dir() -> Optional[Path]:
+    """Find the Windows-side walk-to-mordor dir from inside WSL.
+
+    Prefers an existing walks.db (globbed across drive letters and user
+    profiles, most recently modified wins); falls back to resolving
+    %LOCALAPPDATA% via cmd.exe for a fresh install with no DB yet.
+    """
     import subprocess
+    try:
+        candidates = []
+        for db_path in Path("/mnt").glob(
+                "*/Users/*/AppData/Local/walk-to-mordor/walks.db"):
+            try:
+                candidates.append((db_path.stat().st_mtime, db_path.parent))
+            except OSError:
+                continue
+        if candidates:
+            candidates.sort(reverse=True)
+            return candidates[0][1]
+    except Exception:  # noqa: BLE001
+        pass
     try:
         out = subprocess.run(
             ["cmd.exe", "/c", "echo", "%LOCALAPPDATA%"],
@@ -64,7 +82,7 @@ def _wsl_windows_localappdata() -> Optional[Path]:
         out2 = subprocess.run(["wslpath", win_path],
                               capture_output=True, text=True, timeout=10)
         p = Path(out2.stdout.strip())
-        return p if p.is_dir() else None
+        return (p / "walk-to-mordor") if p.is_dir() else None
     except Exception:  # noqa: BLE001
         return None
 
@@ -73,8 +91,14 @@ def data_dir() -> Path:
     if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
         d = Path(os.environ["LOCALAPPDATA"]) / "walk-to-mordor"
     elif _is_wsl():
-        win = _wsl_windows_localappdata()
-        d = (win / "walk-to-mordor") if win else (Path.home() / ".walk-to-mordor")
+        win = _wsl_walk_to_mordor_dir()
+        if win is not None:
+            d = win
+        else:
+            d = Path.home() / ".walk-to-mordor"
+            print("warning: could not find the Windows walk-to-mordor folder;"
+                  " using ~/.walk-to-mordor — the daemon will not see this data",
+                  file=sys.stderr)
     else:
         d = Path.home() / ".walk-to-mordor"
     d.mkdir(parents=True, exist_ok=True)
