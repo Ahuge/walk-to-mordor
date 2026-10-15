@@ -55,6 +55,22 @@ def march_stats(db: sqlite3.Connection):
     while d in days:
         streak += 1
         d -= timedelta(days=1)
+    # Fold in the currently-open march (daemon publishes it every ~15 s
+    # while the belt moves; ignored if stale, e.g. after a crash).
+    try:
+        row = db.execute(
+            "SELECT value FROM meta WHERE key='open_march'").fetchone()
+        if row:
+            om = json.loads(row[0])
+            upd = _local(om["updated_at"]).astimezone(timezone.utc)
+            age = (datetime.now(timezone.utc) - upd).total_seconds()
+            if age < 180:
+                dist = om.get("distance_m") or 0
+                total_m += dist
+                if _local(om["started_at"]).date() == today:
+                    today_m += dist
+    except Exception:  # noqa: BLE001
+        pass
     return today_m, total_m, streak
 
 
@@ -123,10 +139,16 @@ def snapshot() -> dict:
     data = api_get("/api/stats")
     if isinstance(data, dict) and "leg_index" in data:
         return data
-    return snapshot_from_db()
+    try:
+        return snapshot_from_db()
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"stats unavailable ({e}). Is the daemon running? "
+                         "Restart it: schtasks /run /tn \"WalkToMordor\""}
 
 
 def format_snapshot(s: dict) -> str:
+    if "error" in s:
+        return f"Walk to Mordor\n\n{s['error']}"
     bar_len = 24
     filled = int(s["leg_frac"] * bar_len)
     bar = "#" * filled + "-" * (bar_len - filled)

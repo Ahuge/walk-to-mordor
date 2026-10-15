@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walk to Mordor</title>
+<style>
+  :root { --parchment:#f3e9d2; --ink:#3a2e1e; --bg:#1c1a17; --card:#2a251d; }
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:#e8dcc0; font-family:Georgia,'Times New Roman',serif; margin:0; padding:16px; }
+  header { text-align:center; margin-bottom:12px; }
+  header h1 { margin:0; letter-spacing:4px; font-size:28px; color:var(--parchment); }
+  header p { margin:4px 0 0; color:#9a8c6d; font-style:italic; font-size:14px; }
+  main { display:flex; gap:16px; max-width:1500px; margin:0 auto; align-items:flex-start; }
+  #map-card { flex:3; background:var(--card); border-radius:12px; padding:12px; }
+  #map { width:100%; height:auto; display:block; border-radius:8px; }
+  aside { flex:1; min-width:280px; display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--card); border-radius:12px; padding:14px 16px; }
+  .card h2 { margin:0 0 8px; font-size:15px; letter-spacing:2px; color:var(--parchment); text-transform:uppercase; }
+  #status-line { font-size:18px; font-style:italic; }
+  #leg-line { font-size:14px; margin-top:6px; }
+  .bar { height:10px; background:#141210; border-radius:5px; margin-top:8px; overflow:hidden; }
+  .bar > div { height:100%; background:linear-gradient(90deg,#7da05c,#d4af37); width:0%; transition:width 1s; }
+  #dist-line { margin-top:8px; font-size:14px; color:#cbbb96; }
+  .btnrow { display:flex; gap:8px; margin-top:4px; }
+  button { flex:1; font-family:inherit; font-size:15px; padding:10px 0; border:none; border-radius:8px;
+           background:var(--parchment); color:var(--ink); cursor:pointer; }
+  button:hover { filter:brightness(1.08); }
+  button.danger { background:#8c3b2e; color:#f3e9d2; }
+  #march-log { list-style:none; margin:0; padding:0; font-size:13px; max-height:220px; overflow-y:auto; }
+  #march-log li { padding:6px 0; border-bottom:1px solid #3a332a; color:#cbbb96; }
+  #march-log li:last-child { border-bottom:none; }
+  .fog { transition: opacity 1.2s; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WALK TO MORDOR</h1>
+  <p>every step is a mile on the road</p>
+</header>
+<main>
+  <div id="map-card">
+    <svg id="map" viewBox="0 0 1200 720" role="img" aria-label="Journey map">
+      <defs>
+        <radialGradient id="parch" cx="50%" cy="40%" r="90%">
+          <stop offset="0%" stop-color="#f7efdb"/>
+          <stop offset="100%" stop-color="#e8d9b8"/>
+        </radialGradient>
+      </defs>
+      <rect x="0" y="0" width="1200" height="720" fill="url(#parch)"/>
+
+      <!-- terrain bands (12 legs, 100px each) -->
+      <g id="terrain" opacity="0.55">
+        <rect x="0" y="0" width="100" height="720" fill="#7da05c"/>
+        <rect x="100" y="0" width="100" height="720" fill="#3f6b3a"/>
+        <rect x="200" y="0" width="100" height="720" fill="#c9a227"/>
+        <rect x="300" y="0" width="100" height="720" fill="#8a8f98"/>
+        <rect x="400" y="0" width="100" height="720" fill="#6b7f99"/>
+        <rect x="500" y="0" width="100" height="720" fill="#3a3f4a"/>
+        <rect x="600" y="0" width="100" height="720" fill="#d4af37"/>
+        <rect x="700" y="0" width="100" height="720" fill="#4a90d9"/>
+        <rect x="800" y="0" width="100" height="720" fill="#3aa6a6"/>
+        <rect x="900" y="0" width="100" height="720" fill="#7a7a4d"/>
+        <rect x="1000" y="0" width="100" height="720" fill="#5c5c5c"/>
+        <rect x="1100" y="0" width="100" height="720" fill="#2b2b2b"/>
+      </g>
+
+      <!-- decorations -->
+      <g id="decor" opacity="0.85">
+        <!-- Shire hills + hobbit hole -->
+        <circle cx="30" cy="560" r="34" fill="#6a8f4c"/><circle cx="75" cy="575" r="26" fill="#6a8f4c"/>
+        <ellipse cx="52" cy="560" rx="20" ry="16" fill="#5b7a41"/><circle cx="52" cy="562" r="7" fill="#4a3319"/>
+        <!-- Old Forest trees -->
+        <g fill="#2c4f2a"><polygon points="130,470 145,420 160,470"/><polygon points="155,480 170,430 185,480"/><polygon points="120,500 135,455 150,500"/></g>
+        <!-- Bree houses -->
+        <g><rect x="225" y="520" width="26" height="20" fill="#8a6a3a"/><polygon points="222,520 238,506 254,520" fill="#5e4426"/>
+        <rect x="258" y="530" width="22" height="17" fill="#8a6a3a"/><polygon points="255,530 269,518 283,530" fill="#5e4426"/></g>
+        <!-- Weathertop -->
+        <polygon points="310,470 350,360 390,470" fill="#6f747d"/><rect x="343" y="322" width="14" height="42" fill="#54575e"/>
+        <!-- Trollshaws peaks -->
+        <g><polygon points="410,480 440,400 470,480" fill="#5a6c85"/><polygon points="432,420 440,400 448,420" fill="#e8e8e8"/>
+        <polygon points="450,490 480,415 510,490" fill="#5a6c85"/><polygon points="472,435 480,415 488,435" fill="#e8e8e8"/></g>
+        <!-- Moria gate -->
+        <polygon points="510,480 545,390 580,480" fill="#2e333d"/><path d="M532,480 v-26 a13,13 0 0 1 26,0 v26 z" fill="#15171c"/>
+        <!-- Lorien mallorns -->
+        <g><rect x="628" y="470" width="6" height="60" fill="#6b4e2e"/><circle cx="631" cy="460" r="22" fill="#caa437"/>
+        <rect x="662" y="480" width="6" height="55" fill="#6b4e2e"/><circle cx="665" cy="470" r="18" fill="#caa437"/></g>
+        <!-- Anduin river -->
+        <path d="M750,60 C730,200 770,320 750,440 C735,540 765,630 750,700" stroke="#2f6db3" stroke-width="30" fill="none" opacity="0.8"/>
+        <!-- Rauros falls -->
+        <rect x="838" y="420" width="24" height="120" fill="#2f8f8f"/><g stroke="#dff3f3" stroke-width="3"><line x1="844" y1="430" x2="844" y2="530"/><line x1="852" y1="430" x2="852" y2="530"/><line x1="860" y1="430" x2="860" y2="530"/></g>
+        <!-- Dead Marshes wisps -->
+        <g stroke="#5c5c38" stroke-width="2"><line x1="920" y1="500" x2="920" y2="560"/><line x1="945" y1="510" x2="945" y2="570"/><line x1="970" y1="505" x2="970" y2="565"/></g>
+        <g fill="#cfe8d8" opacity="0.8"><circle cx="930" cy="470" r="5"/><circle cx="965" cy="455" r="4"/></g>
+        <!-- Gorgoroth cracks -->
+        <g stroke="#2e2e2e" stroke-width="3" fill="none"><polyline points="1010,500 1030,540 1020,580"/><polyline points="1060,480 1050,530 1070,570"/></g>
+        <!-- Mount Doom -->
+        <polygon points="1100,480 1150,360 1200,480" fill="#1a1a1a"/><path d="M1150,360 L1142,410 L1158,410 Z" fill="#c33d1e"/>
+        <circle cx="1150" cy="350" r="26" fill="#c33d1e" opacity="0.25"/>
+      </g>
+
+      <!-- leg labels -->
+      <g font-family="Georgia,serif" font-size="13" letter-spacing="1" fill="#3a2e1e" text-anchor="middle" opacity="0.9">
+        <text x="50" y="30">SHIRE</text><text x="150" y="30">OLD FOREST</text>
+        <text x="250" y="30">BREE</text><text x="350" y="30">WEATHERTOP</text>
+        <text x="450" y="30">TROLLSHAWS</text><text x="550" y="30">MORIA</text>
+        <text x="650" y="30">LÓRIEN</text><text x="750" y="30">ANDUIN</text>
+        <text x="850" y="30">RAUROS</text><text x="950" y="30">MARSHES</text>
+        <text x="1050" y="30">GORGOROTH</text><text x="1150" y="30">MORDOR</text>
+      </g>
+      <text x="50" y="620" font-family="Georgia,serif" font-size="12" fill="#3a2e1e" text-anchor="middle" font-style="italic">Bag End</text>
+      <text x="1150" y="520" font-family="Georgia,serif" font-size="12" fill="#7a1f12" text-anchor="middle" font-style="italic">Mount Doom</text>
+
+      <!-- route path (built by JS) -->
+      <path id="route-casing" d="" fill="none" stroke="#f5edd8" stroke-width="10" stroke-linecap="round"/>
+      <path id="route" d="" fill="none" stroke="#6b4423" stroke-width="5" stroke-linecap="round" stroke-dasharray="1 9"/>
+
+      <!-- fog of war, one rect per leg -->
+      <g id="fog">
+        <rect class="fog" x="0" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="100" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="200" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="300" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="400" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="500" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="600" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="700" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="800" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="900" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="1000" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+        <rect class="fog" x="1100" y="0" width="100" height="720" fill="#101020" opacity="0.8"/>
+      </g>
+
+      <!-- party token -->
+      <g id="token" transform="translate(50,500)">
+        <circle r="16" fill="#2e4a7a" opacity="0.25">
+          <animate attributeName="r" values="12;20" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.3;0" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <circle r="11" fill="#2e4a7a" stroke="#f5edd8" stroke-width="2.5"/>
+        <path d="M -5,3 L 0,-7 L 5,3 Z" fill="#d9c58a"/>
+      </g>
+    </svg>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h2>Journey</h2>
+      <div id="status-line">…</div>
+      <div id="leg-line">…</div>
+      <div class="bar"><div id="leg-bar"></div></div>
+      <div id="dist-line">…</div>
+    </div>
+    <div class="card">
+      <h2>Belt</h2>
+      <div class="btnrow">
+        <button id="btn-start">Start</button>
+        <button id="btn-stop" class="danger">Stop</button>
+      </div>
+      <div class="btnrow">
+        <button id="btn-slower">− speed</button>
+        <button id="btn-faster">+ speed</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>March log</h2>
+      <ul id="march-log"><li>…</li></ul>
+    </div>
+  </aside>
+</main>
+
+<script>
+const W = [[50,500],[150,420],[250,480],[350,340],[450,430],[550,380],
+           [650,470],[750,430],[850,480],[950,430],[1050,470],[1150,380]];
+let legBounds = [], routeLen = 0, lastSpeed = 0;
+
+function smoothPath(pts) {
+  let d = `M ${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i-1)], p1 = pts[i], p2 = pts[i+1],
+          p3 = pts[Math.min(pts.length-1, i+2)];
+    const c1x = p1[0]+(p2[0]-p0[0])/6, c1y = p1[1]+(p2[1]-p0[1])/6;
+    const c2x = p2[0]-(p3[0]-p1[0])/6, c2y = p2[1]-(p3[1]-p1[1])/6;
+    d += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+function buildRoute() {
+  const d = smoothPath(W);
+  const casing = document.getElementById('route-casing');
+  const route = document.getElementById('route');
+  casing.setAttribute('d', d); route.setAttribute('d', d);
+  routeLen = route.getTotalLength();
+}
+
+async function init() {
+  const route = await fetch('/api/route').then(r => r.json());
+  const total = route.legs.reduce((a,l) => a + l.distance, 0);
+  let cum = 0;
+  legBounds = route.legs.map(l => {
+    const s = cum / total; cum += l.distance;
+    return {start: s, end: cum / total, name: l.name};
+  });
+  buildRoute();
+  tick(); setInterval(tick, 2000);
+  loadMarches(); setInterval(loadMarches, 10000);
+}
+
+async function tick() {
+  const s = await fetch('/api/stats').then(r => r.json()).catch(() => null);
+  if (!s || s.error || !routeLen) return;
+  lastSpeed = s.speed_kmh || 0;
+  const b = legBounds[s.leg_index] || legBounds[0];
+  const overall = b.start + s.leg_frac * (b.end - b.start);
+  const pt = document.getElementById('route').getPointAtLength(overall * routeLen);
+  document.getElementById('token').setAttribute('transform', `translate(${pt.x},${pt.y})`);
+  document.querySelectorAll('.fog').forEach((el, i) => {
+    el.style.opacity = i <= s.leg_index ? 0 : 0.8;
+  });
+  document.getElementById('status-line').textContent =
+    s.walking ? `Walking @ ${s.speed_kmh.toFixed(1)} km/h` : 'At rest';
+  document.getElementById('leg-line').textContent =
+    `Leg ${s.leg_index + 1}/${s.leg_count} — ${s.leg_name}`;
+  document.getElementById('leg-bar').style.width = `${(s.leg_frac * 100).toFixed(0)}%`;
+  const streak = s.streak ? ` · 🔥 ${s.streak}-day streak` : '';
+  document.getElementById('dist-line').textContent =
+    `Today ${s.today_km.toFixed(1)} km · Total ${s.total_km.toFixed(1)} km${streak}`;
+}
+
+async function loadMarches() {
+  const data = await fetch('/api/marches?limit=8').then(r => r.json()).catch(() => null);
+  if (!data) return;
+  const ul = document.getElementById('march-log');
+  ul.innerHTML = data.marches.length ? '' : '<li>No marches yet — walk!</li>';
+  for (const m of data.marches) {
+    const d = new Date(m.started_at);
+    const mins = Math.round(m.duration_s / 60);
+    const li = document.createElement('li');
+    li.textContent = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` +
+      ` — ${(m.distance_m/1000).toFixed(1)} km in ${mins} min` +
+      (m.avg_speed_kmh ? ` @ ${m.avg_speed_kmh.toFixed(1)} km/h` : '');
+    ul.appendChild(li);
+  }
+}
+
+async function cmd(op, args = {}) {
+  await fetch('/api/commands', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({op, args}),
+  });
+}
+document.getElementById('btn-start').onclick = () => {
+  if (confirm('Belt will start shortly. Area clear, safety key in?')) cmd('start');
+};
+document.getElementById('btn-stop').onclick = () => cmd('stop');
+document.getElementById('btn-slower').onclick = () =>
+  cmd('set_speed', {kmh: Math.max(0.5, (lastSpeed > 0.05 ? lastSpeed : 2.0) - 0.5)});
+document.getElementById('btn-faster').onclick = () =>
+  cmd('set_speed', {kmh: (lastSpeed > 0.05 ? lastSpeed : 2.0) + 0.5});
+
+init();
+</script>
+</body>
+</html>

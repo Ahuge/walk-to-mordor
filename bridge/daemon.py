@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -85,6 +86,7 @@ class MarchTracker:
         self.speed_sum = 0.0
         self.speed_n = 0
         self.max_incline = 0.0
+        self._tick = 0
 
     def reading(self, ts: str, row: dict) -> None:
         now = datetime.now(timezone.utc)
@@ -101,6 +103,7 @@ class MarchTracker:
             self.speed_sum = 0.0
             self.speed_n = 0
             self.max_incline = 0.0
+            self._tick = 0
             log.info("march started")
             return
         # in a march: track stats, watch for the belt stopping
@@ -110,9 +113,28 @@ class MarchTracker:
             self.speed_sum += speed
             self.speed_n += 1
         self.max_incline = max(self.max_incline, row.get("incline_pct") or 0.0)
+        self._tick += 1
+        if self._tick % 15 == 0:
+            self._publish_open(now)
         idle = (now - self.last_motion).total_seconds()
         if idle > MARCH_IDLE_TIMEOUT_S:
             self.finish(self.last_motion)
+
+    def _publish_open(self, now) -> None:
+        """Publish the in-progress march so stats/dashboards show live distance."""
+        dist = max(0, (self.last.get("distance_m") or 0)
+                   - (self.first.get("distance_m") or 0))
+        dur = max(0, int((now - self.start_dt).total_seconds()))
+        with self.lock:
+            self.db.execute(
+                "INSERT INTO meta (key, value) VALUES ('open_march', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (json.dumps({"started_at": self.start_ts,
+                             "distance_m": dist,
+                             "duration_s": dur,
+                             "updated_at": now.isoformat(timespec="seconds")}),),
+            )
+            self.db.commit()
 
     def finish(self, end_dt) -> None:
         if not self.in_march:
@@ -140,6 +162,7 @@ class MarchTracker:
                 (self.start_ts, end_ts, duration, dist, cal, steps,
                  avg_speed, self.max_incline),
             )
+            self.db.execute("DELETE FROM meta WHERE key='open_march'")
             self.db.commit()
         log.info("march finished: %d m in %d s (avg %.2f km/h)",
                  dist, duration, avg_speed)
@@ -249,13 +272,54 @@ class _ApiHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if self.path == "/api/stats":
+            parsed = urlparse(self.path)
+            path = parsed.path
+            if path == "/":
+                html = (Path(__file__).resolve().parent.parent
+                        / "ui" / "dashboard.html").read_text(encoding="utf-8")
+                body = html.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/api/route":
+                route = (Path(__file__).resolve().parent.parent
+                         / "packs" / "lotr" / "route.json").read_text(
+                             encoding="utf-8")
+                body = route.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/api/marches":
+                limit = int(parse_qs(parsed.query).get("limit", ["20"])[0])
+                limit = max(1, min(100, limit))
+                db = open_db()
+                try:
+                    rows = db.execute(
+                        "SELECT id, started_at, ended_at, duration_s,"
+                        " distance_m, calories, steps, avg_speed_kmh,"
+                        " max_incline_pct FROM marches"
+                        " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+                finally:
+                    db.close()
+                self._send_json({"marches": [
+                    {"id": r[0], "started_at": r[1], "ended_at": r[2],
+                     "duration_s": r[3], "distance_m": r[4], "calories": r[5],
+                     "steps": r[6], "avg_speed_kmh": r[7],
+                     "max_incline_pct": r[8]} for r in rows]})
+                return
+            if path == "/api/stats":
                 s = snapshot_from_db()
                 s["source"] = "api"
                 self._send_json(s)
-            elif self.path.startswith("/api/commands/"):
+            elif path.startswith("/api/commands/"):
                 try:
-                    cmd_id = int(self.path.rsplit("/", 1)[-1])
+                    cmd_id = int(path.rsplit("/", 1)[-1])
                 except ValueError:
                     return self._send_json({"error": "bad id"}, 400)
                 db = open_db()
@@ -281,7 +345,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            if self.path != "/api/commands":
+            path = urlparse(self.path).path
+            if path != "/api/commands":
                 return self._send_json({"error": "not found"}, 404)
             length = int(self.headers.get("Content-Length", 0) or 0)
             try:

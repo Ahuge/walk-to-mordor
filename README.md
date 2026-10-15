@@ -96,6 +96,19 @@ when the daemon isn't running. The API path is what makes WSL-side tools
 reliable: SQLite over WSL's 9P mount is flaky, HTTP is not. The future
 web dashboard (real map) will be served from this same API.
 
+## Dashboard (real map)
+
+The daemon serves the journey dashboard at <http://127.0.0.1:8471/> —
+open it in any browser on the machine:
+
+- Storybook SVG map of the route: terrain per leg, the road winding
+  through it, your party token moving live, fog-of-war lifting as you
+  reach each leg.
+- Live stats (leg/progress, today/total, streak, belt status).
+- Belt controls (Start/Stop/speed) and the recent march log.
+
+The page polls the API every 2 s; no build step, no dependencies.
+
 ## Live stats & minimap
 
 `bridge/stats.py` reads `walks.db` — one snapshot, or a live terminal view:
