@@ -106,8 +106,8 @@ class Api:
             self.win.destroy()
 
 
-def _launch_xy():
-    """Bottom-right of the work area (screen minus taskbar)."""
+def _move_bottom_right():
+    """Position bottom-right of the work area (screen minus taskbar)."""
     try:
         import ctypes
         from ctypes import wintypes
@@ -116,9 +116,13 @@ def _launch_xy():
         # SPI_GETWORKAREA = 0x0030
         ctypes.windll.user32.SystemParametersInfoW(0x0030, 0,
                                                    ctypes.byref(rect), 0)
-        return (rect.right - WIDTH - 12, rect.bottom - HEIGHT - 12)
+        x, y = rect.right - WIDTH - 12, rect.bottom - HEIGHT - 12
+        hwnd = ctypes.windll.user32.FindWindowW(None, TITLE)
+        if hwnd:
+            # SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE
+            ctypes.windll.user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0015)
     except Exception:
-        return (None, None)
+        pass
 
 
 def _set_window_icon():
@@ -144,18 +148,28 @@ def _set_window_icon():
 def main() -> None:
     try:
         import webview
+        print("pywebview", webview.__version__)
     except ImportError:
         sys.exit("pywebview is not installed. Run:  pip install pywebview")
+    framed = "--framed" in sys.argv
     api = Api()
-    x, y = _launch_xy()
-    kwargs = dict(width=WIDTH, height=HEIGHT, min_size=(240, 200),
-                  frameless=True, on_top=True, js_api=api)
-    if x is not None:
-        kwargs["x"], kwargs["y"] = x, y
-    win = webview.create_window(TITLE, URL, **kwargs)
+    # Keep create_window minimal: frameless windows are quirky in
+    # pywebview's WinForms backend, so positioning is done via Win32
+    # after load, not through pywebview's own x/y properties.
+    win = webview.create_window(
+        TITLE,
+        URL,
+        width=WIDTH,
+        height=HEIGHT,
+        min_size=(240, 200),
+        frameless=not framed,
+        on_top=True,
+        js_api=api,
+    )
     api.win = win
 
     def on_loaded():
+        _move_bottom_right()
         try:
             win.evaluate_js(DRAG_JS)
         except Exception:
@@ -166,7 +180,8 @@ def main() -> None:
     try:
         webview.start()
     except Exception as e:
-        sys.exit(f"widget failed to start: {e}")
+        sys.exit(f"widget failed to start: {e}\n"
+                 f"try: python ui/widget.py --framed")
 
 
 if __name__ == "__main__":
