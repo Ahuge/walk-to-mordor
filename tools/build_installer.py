@@ -59,12 +59,22 @@ def main() -> None:
                    cwd=REPO, check=True)
     iscc = find_iscc()
     print(f"=== building installer with {iscc} ===")
-    iscc_cmd = [str(iscc), str(REPO / "installer" / "walk-to-mordor.iss")]
+    iss_path = REPO / "installer" / "walk-to-mordor.iss"
     if version:
-        # Override the #define in the .iss
-        iscc_cmd.insert(1, f"/DMyAppVersion={version}")
-        print(f"version: {version}")
-    subprocess.run(iscc_cmd, cwd=REPO, check=True)
+        # Patch the version directly into the .iss (more reliable than /D).
+        text = iss_path.read_text(encoding="utf-8")
+        import re
+        text, n = re.subn(
+            r'#define MyAppVersion "[^"]*"',
+            f'#define MyAppVersion "{version}"',
+            text,
+        )
+        if n:
+            iss_path.write_text(text, encoding="utf-8")
+            print(f"version: {version}")
+        else:
+            print("warning: could not patch version in .iss")
+    subprocess.run([str(iscc), str(iss_path)], cwd=REPO, check=True)
     setups = sorted((REPO / "dist").glob("WalkToMordorSetup-*.exe"))
     if setups:
         print(f"done: {setups[-1]}")
