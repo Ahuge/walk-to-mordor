@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from bridge.client import api_get  # noqa: E402
 from bridge.store import data_dir, open_db  # noqa: E402
 
 M_PER_MI = 1609.344
@@ -88,7 +89,7 @@ def route_position(route: dict, total_m: float):
     return len(legs) - 1, legs[-1], 1.0
 
 
-def snapshot() -> dict:
+def snapshot_from_db() -> dict:
     db = open_db()
     try:
         route = load_route()
@@ -107,9 +108,22 @@ def snapshot() -> dict:
             "walking": walking,
             "speed_kmh": speed,
             "db": str(data_dir() / "walks.db"),
+            "source": "db",
         }
     finally:
         db.close()
+
+
+def snapshot() -> dict:
+    """Live stats, preferring the daemon's HTTP API.
+
+    The API path avoids touching the SQLite file directly, which is flaky
+    over WSL's 9P mount; direct DB is the fallback when the daemon is down.
+    """
+    data = api_get("/api/stats")
+    if isinstance(data, dict) and "leg_index" in data:
+        return data
+    return snapshot_from_db()
 
 
 def format_snapshot(s: dict) -> str:

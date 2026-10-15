@@ -38,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from bridge.client import api_get, api_post  # noqa: E402
 from bridge.store import data_dir, open_db  # noqa: E402
 
 CONTROL_POINT_UUID = "00002ad9-0000-1000-8000-00805f9b34fb"
@@ -181,7 +182,15 @@ class TreadmillController:
 # CLI: queue commands for the daemon
 # ---------------------------------------------------------------------------
 
-def queue_command(op: str, args: dict) -> int:
+def queue_command(op: str, args: dict):
+    """Queue a belt command. Returns (id, via_api).
+
+    Prefers the daemon's HTTP API (robust over WSL); falls back to a direct
+    DB insert when the daemon isn't reachable (it'll execute on next run).
+    """
+    res = api_post("/api/commands", {"op": op, "args": args})
+    if isinstance(res, dict) and "id" in res:
+        return res["id"], True
     db = open_db()
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     cur = db.execute(
@@ -192,23 +201,35 @@ def queue_command(op: str, args: dict) -> int:
     db.commit()
     cmd_id = cur.lastrowid
     db.close()
-    return cmd_id
+    return cmd_id, False
+
+
+def _command_status(cmd_id: int):
+    """(status, result) via API first, direct DB as fallback."""
+    res = api_get(f"/api/commands/{cmd_id}")
+    if isinstance(res, dict) and res.get("status") in (
+            "done", "error", "expired"):
+        return res["status"], res.get("result", {})
+    db = open_db()
+    try:
+        row = db.execute(
+            "SELECT status, result FROM commands WHERE id = ?", (cmd_id,)
+        ).fetchone()
+        if row and row[0] in ("done", "error", "expired"):
+            return row[0], json.loads(row[1] or "{}")
+    finally:
+        db.close()
+    return None, None
 
 
 def wait_for_result(cmd_id: int, timeout_s: int = 45):
-    db = open_db()
     deadline = time.time() + timeout_s
-    try:
-        while time.time() < deadline:
-            row = db.execute(
-                "SELECT status, result FROM commands WHERE id = ?", (cmd_id,)
-            ).fetchone()
-            if row and row[0] in ("done", "error", "expired"):
-                return row[0], json.loads(row[1] or "{}")
-            time.sleep(0.5)
-        return "timeout", {"ok": False, "reason": "daemon did not respond"}
-    finally:
-        db.close()
+    while time.time() < deadline:
+        status, result = _command_status(cmd_id)
+        if status is not None:
+            return status, result
+        time.sleep(0.5)
+    return "timeout", {"ok": False, "reason": "daemon did not respond"}
 
 
 def show_status() -> None:
@@ -266,9 +287,9 @@ def main() -> None:
         op, op_args = "set_incline", {"pct": args.pct}
     else:
         ap.error(f"unknown command {args.cmd}")
-    cmd_id = queue_command(op, op_args)
-    print(f"queued #{cmd_id}: {op} {op_args or ''} "
-          f"(db: {data_dir() / 'walks.db'})")
+    cmd_id, via_api = queue_command(op, op_args)
+    where = "daemon API" if via_api else f"db: {data_dir() / 'walks.db'}"
+    print(f"queued #{cmd_id}: {op} {op_args or ''} ({where})")
     if args.no_wait:
         return
     print("waiting for the daemon...", flush=True)

@@ -106,8 +106,16 @@ def data_dir() -> Path:
 
 
 def open_db() -> sqlite3.Connection:
-    """Open walks.db (WAL mode, thread-safe handle). Runs SCHEMA idempotently."""
+    """Open walks.db (thread-safe handle). Runs SCHEMA idempotently.
+
+    The WAL pragma is only (re)set on Windows: over WSL's 9P mount the
+    shm mmap fails with 'disk I/O error'. Journal mode is persistent, so
+    a DB created by the Windows daemon stays WAL without re-setting it.
+    """
     db = sqlite3.connect(data_dir() / "walks.db", check_same_thread=False)
-    db.execute("PRAGMA journal_mode=WAL;")
+    if os.name == "nt":
+        mode = db.execute("PRAGMA journal_mode;").fetchone()[0]
+        if mode.lower() != "wal":
+            db.execute("PRAGMA journal_mode=WAL;")
     db.executescript(SCHEMA)
     return db

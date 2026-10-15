@@ -80,6 +80,22 @@ as stale. Speed/incline are clamped to the pad's reported supported range.
   belt doesn't reach them; a stopped belt queues targets for the next start
   instead of sending them (the pad ignores them otherwise).
 
+## Localhost API
+
+The daemon also serves a tiny HTTP API on `127.0.0.1:8471` (stdlib only,
+no extra dependencies):
+
+- `GET /api/stats` — live snapshot (leg, progress, today/total, streak,
+  belt status) as JSON
+- `POST /api/commands` — `{"op": "start"|"stop"|"set_speed"|"set_incline",
+  "args": {...}}` → `{"id": …}` (202)
+- `GET /api/commands/<id>` — command status + result
+
+The CLI and stats tools prefer the API and fall back to direct DB access
+when the daemon isn't running. The API path is what makes WSL-side tools
+reliable: SQLite over WSL's 9P mount is flaky, HTTP is not. The future
+web dashboard (real map) will be served from this same API.
+
 ## Live stats & minimap
 
 `bridge/stats.py` reads `walks.db` — one snapshot, or a live terminal view:

@@ -25,6 +25,7 @@ import sqlite3
 import sys
 import threading
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -32,11 +33,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bleak import BleakClient  # noqa: E402
 
+from bridge.stats import snapshot_from_db  # noqa: E402
 from bridge.store import data_dir, open_db  # noqa: E402
 from treadmill.control import (  # noqa: E402
     COMMAND_TTL_S,
     CONTROL_POINT_UUID,
     TreadmillController,
+    queue_command,
 )
 from treadmill.reader import (  # noqa: E402
     TREADMILL_DATA_UUID,
@@ -221,6 +224,90 @@ async def sleep_or_stop(seconds: float) -> None:
         pass
 
 
+API_PORT = 8471
+
+
+class _ApiHandler(BaseHTTPRequestHandler):
+    """Localhost API: stats and belt commands without touching the DB file.
+
+    This is what WSL-side tools (and later the web dashboard) talk to —
+    SQLite over WSL's 9P mount is flaky, HTTP is not.
+    """
+
+    server_version = "WalkToMordor/1"
+
+    def log_message(self, *args):  # quiet
+        pass
+
+    def _send_json(self, obj, code=200):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        try:
+            if self.path == "/api/stats":
+                s = snapshot_from_db()
+                s["source"] = "api"
+                self._send_json(s)
+            elif self.path.startswith("/api/commands/"):
+                try:
+                    cmd_id = int(self.path.rsplit("/", 1)[-1])
+                except ValueError:
+                    return self._send_json({"error": "bad id"}, 400)
+                db = open_db()
+                try:
+                    row = db.execute(
+                        "SELECT id, op, args, status, result, done_at"
+                        " FROM commands WHERE id=?", (cmd_id,)).fetchone()
+                finally:
+                    db.close()
+                if not row:
+                    return self._send_json({"error": "not found"}, 404)
+                self._send_json({
+                    "id": row[0], "op": row[1],
+                    "args": json.loads(row[2] or "{}"),
+                    "status": row[3],
+                    "result": json.loads(row[4] or "{}"),
+                    "done_at": row[5],
+                })
+            else:
+                self._send_json({"error": "not found"}, 404)
+        except Exception as e:  # noqa: BLE001
+            self._send_json({"error": str(e)}, 500)
+
+    def do_POST(self):
+        try:
+            if self.path != "/api/commands":
+                return self._send_json({"error": "not found"}, 404)
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                data = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:  # noqa: BLE001
+                return self._send_json({"error": "bad json"}, 400)
+            op = data.get("op")
+            args = data.get("args") or {}
+            if op not in ("start", "stop", "set_speed", "set_incline"):
+                return self._send_json({"error": f"unknown op {op!r}"}, 400)
+            cmd_id = queue_command(op, args)
+            self._send_json({"id": cmd_id}, 202)
+        except Exception as e:  # noqa: BLE001
+            self._send_json({"error": str(e)}, 500)
+
+
+def _serve_api_forever():
+    server = ThreadingHTTPServer(("127.0.0.1", API_PORT), _ApiHandler)
+    server.daemon_threads = True
+    log.info("API listening on 127.0.0.1:%d", API_PORT)
+    try:
+        server.serve_forever()
+    except Exception:  # noqa: BLE001
+        log.exception("API server error")
+
+
 async def run() -> None:
     ddir = data_dir()
     setup_logging(ddir / "daemon.log")
@@ -230,6 +317,10 @@ async def run() -> None:
     db = open_db()
     tracker = MarchTracker(db, lock)
     log.info("daemon started, db=%s", ddir / "walks.db")
+
+    api_thread = threading.Thread(target=_serve_api_forever, daemon=True,
+                                  name="api")
+    api_thread.start()
 
     def on_signal(signum, frame):
         log.info("stop requested (signal %s)", signum)
