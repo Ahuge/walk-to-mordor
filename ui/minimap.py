@@ -95,7 +95,7 @@ class Minimap(tk.Tk):
         try:
             db = open_db()
             try:
-                today_m, total_m, streak = march_stats(db)
+                today_m, total_m, streak, _tsteps, _steps = march_stats(db)
                 status, _walking, _speed = live_status(db)
             finally:
                 db.close()

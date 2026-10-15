@@ -36,20 +36,24 @@ def _local(dt_str: str) -> datetime:
 
 
 def march_stats(db: sqlite3.Connection):
-    """Returns (today_m, total_m, streak_days)."""
+    """Returns (today_m, total_m, streak_days, today_steps, total_steps)."""
     rows = db.execute(
-        "SELECT started_at, distance_m FROM marches ORDER BY started_at"
+        "SELECT started_at, distance_m, steps FROM marches ORDER BY started_at"
     ).fetchall()
     today = datetime.now().astimezone().date()
     today_m = 0
     total_m = 0
+    today_steps = 0
+    total_steps = 0
     days = set()
-    for ts, dist in rows:
+    for ts, dist, steps in rows:
         local = _local(ts)
         total_m += dist or 0
+        total_steps += steps or 0
         days.add(local.date())
         if local.date() == today:
             today_m += dist or 0
+            today_steps += steps or 0
     streak = 0
     d = today if today in days else today - timedelta(days=1)
     while d in days:
@@ -66,12 +70,15 @@ def march_stats(db: sqlite3.Connection):
             age = (datetime.now(timezone.utc) - upd).total_seconds()
             if age < 180:
                 dist = om.get("distance_m") or 0
+                steps = om.get("steps") or 0
                 total_m += dist
+                total_steps += steps
                 if _local(om["started_at"]).date() == today:
                     today_m += dist
+                    today_steps += steps
     except Exception:  # noqa: BLE001
         pass
-    return today_m, total_m, streak
+    return today_m, total_m, streak, today_steps, total_steps
 
 
 def live_status(db: sqlite3.Connection):
@@ -109,7 +116,7 @@ def snapshot_from_db() -> dict:
     db = open_db()
     try:
         route = load_route()
-        today_m, total_m, streak = march_stats(db)
+        today_m, total_m, streak, today_steps, _total_steps = march_stats(db)
         status, walking, speed = live_status(db)
         i, leg, frac = route_position(route, total_m)
         legs = route["legs"]
@@ -118,14 +125,20 @@ def snapshot_from_db() -> dict:
         journey_frac = ((cum_mi + frac * legs[i]["distance"]) / total_mi
                         if total_mi else 0.0)
         journey_frac = max(0.0, min(1.0, journey_frac))
+        prow = db.execute(
+            "SELECT AVG(avg_speed_kmh) FROM (SELECT avg_speed_kmh FROM marches"
+            " WHERE avg_speed_kmh > 0.5 ORDER BY id DESC LIMIT 10)").fetchone()
+        pace = round(prow[0], 2) if prow and prow[0] else 2.5
         return {
             "leg_index": i,
             "leg_count": len(route["legs"]),
             "leg_name": leg["name"],
             "leg_frac": frac,
             "journey_frac": journey_frac,
+            "pace_kmh": pace,
             "today_km": today_m / 1000,
             "total_km": total_m / 1000,
+            "today_steps": today_steps,
             "streak": streak,
             "status": status,
             "walking": walking,

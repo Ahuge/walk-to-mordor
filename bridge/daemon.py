@@ -123,6 +123,10 @@ class MarchTracker:
         """Publish the in-progress march so stats/dashboards show live distance."""
         dist = max(0, (self.last.get("distance_m") or 0)
                    - (self.first.get("distance_m") or 0))
+        steps = 0
+        if self.last.get("steps") is not None and \
+                self.first.get("steps") is not None:
+            steps = max(0, self.last["steps"] - self.first["steps"])
         dur = max(0, int((now - self.start_dt).total_seconds()))
         with self.lock:
             self.db.execute(
@@ -130,6 +134,7 @@ class MarchTracker:
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (json.dumps({"started_at": self.start_ts,
                              "distance_m": dist,
+                             "steps": steps,
                              "duration_s": dur,
                              "updated_at": now.isoformat(timespec="seconds")}),),
             )
@@ -300,12 +305,19 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 "/map.webp": ("packs/lotr/art/map.webp", "image/webp"),
                 "/journey.json": ("packs/lotr/art/journey.json",
                                   "application/json"),
+                "/markers.json": ("packs/lotr/art/markers.json",
+                                  "application/json"),
                 "/leaflet.js": ("ui/vendor/leaflet/leaflet.js",
                                 "text/javascript"),
                 "/leaflet.css": ("ui/vendor/leaflet/leaflet.css", "text/css"),
             }
             if path in static:
                 return self._serve_repo_file(*static[path])
+            if path.startswith("/icons/") and path.endswith(".svg") and \
+                    "/" not in path[len("/icons/"):]:
+                return self._serve_repo_file(
+                    "packs/lotr/art/icons/" + path[len("/icons/"):],
+                    "image/svg+xml")
             if path == "/api/route":
                 route = (Path(__file__).resolve().parent.parent
                          / "packs" / "lotr" / "route.json").read_text(
@@ -319,7 +331,7 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/marches":
                 limit = int(parse_qs(parsed.query).get("limit", ["20"])[0])
-                limit = max(1, min(100, limit))
+                limit = max(1, min(500, limit))
                 db = open_db()
                 try:
                     rows = db.execute(

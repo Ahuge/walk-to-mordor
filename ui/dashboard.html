@@ -21,6 +21,16 @@
     background:var(--parchment); color:var(--ink); border:none; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.4); }
   .tok { width:24px; height:24px; border-radius:50%; background:#1f3a6e; border:3px solid #f5edd8;
     box-shadow:0 0 0 2px #1f3a6e, 0 2px 8px rgba(0,0,0,.5); }
+  .star { font-size:19px; line-height:22px; text-align:center; color:#8a6d1f; opacity:.8;
+    text-shadow:0 0 4px #f5edd8, 0 0 8px #f5edd8; }
+  .star.target { color:#c99612; opacity:1; font-size:25px; animation:starpulse 2s infinite; }
+  .star.done { color:#6b5a24; opacity:.45; }
+  @keyframes starpulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
+  .leaflet-control-layers { background:#2a251d; border:none; border-radius:8px;
+    font-family:Georgia,serif; color:#e8dcc0; box-shadow:0 2px 8px rgba(0,0,0,.5); }
+  .leaflet-control-layers label { color:#e8dcc0; }
+  .leaflet-popup-content-wrapper { background:#f3e9d2; color:#3a2e1e; font-family:Georgia,serif; }
+  .leaflet-popup-content { max-width:260px; }
   aside { flex:1; min-width:280px; display:flex; flex-direction:column; gap:12px; }
   .card { background:var(--card); border-radius:12px; padding:14px 16px; }
   .card h2 { margin:0 0 8px; font-size:15px; letter-spacing:2px; color:var(--parchment); text-transform:uppercase; }
@@ -37,6 +47,17 @@
   #march-log { list-style:none; margin:0; padding:0; font-size:13px; max-height:220px; overflow-y:auto; }
   #march-log li { padding:6px 0; border-bottom:1px solid #3a332a; color:#cbbb96; }
   #march-log li:last-child { border-bottom:none; }
+  #leg-detail { margin-top:8px; font-size:13px; color:#cbbb96; }
+  #steps-today { font-size:18px; font-style:italic; }
+  #steps-graph { display:flex; align-items:stretch; gap:4px; height:108px; margin-top:8px; }
+  #steps-graph .bar-col { flex:1; display:flex; flex-direction:column; align-items:center;
+    justify-content:flex-end; gap:3px; min-width:0; }
+  #steps-graph .bar { width:100%; max-width:22px; border-radius:3px 3px 0 0;
+    background:linear-gradient(180deg,#8a7a4a,#5c6e3f); }
+  #steps-graph .bar-col.today .bar { background:linear-gradient(180deg,#f5d76e,#d4af37);
+    box-shadow:0 0 6px rgba(212,175,55,.6); }
+  #steps-graph .lbl { font-size:9px; color:#9a8c6d; }
+  body.widget #steps-card { display:none; }
   footer { text-align:center; color:#9a8c6d; font-size:12px; margin-top:14px; font-style:italic; }
   #mini-status { display:none; }
 
@@ -87,6 +108,7 @@
       <div id="status-line">…</div>
       <div id="leg-line">…</div>
       <div class="bar"><div id="leg-bar"></div></div>
+      <div id="leg-detail">…</div>
       <div id="dist-line">…</div>
     </div>
     <div class="card" id="belt-card">
@@ -104,6 +126,11 @@
       <h2>March log</h2>
       <ul id="march-log"><li>…</li></ul>
     </div>
+    <div class="card" id="steps-card">
+      <h2>Steps</h2>
+      <div id="steps-today">…</div>
+      <div id="steps-graph"></div>
+    </div>
   </aside>
 </main>
 <footer>Map: Yohann Bethoule / middleearthmap.app (base map by lotrproject.com) — used with permission.</footer>
@@ -112,6 +139,13 @@
 <script>
 const YTOP = 4334;
 let map, journey, cumPx, totalPx, token, fogLayers, fogHalos, lastPos = null, lastSpeed = 0;
+let routeLegs = [], lastTodaySteps = 0;
+
+function fmtEta(h) {
+  if (!isFinite(h) || h < 0) return '—';
+  if (h < 1.5) return `${Math.round(h * 60)} min`;
+  return `${h < 10 ? h.toFixed(1) : Math.round(h)} h`;
+}
 
 // Widget mode: narrow viewport (e.g. a 300x275 window) or ?widget=1 —
 // minimap on top, compact control row below.
@@ -160,8 +194,8 @@ async function init() {
   svg.innerHTML =
     '<defs><mask id="fogmask"><rect x="0" y="0" width="5000" height="4344" fill="white"/>' +
     fogStroke('fog1', 950, 0.45) + fogStroke('fog2', 680, 0.75) + fogStroke('fog3', 440, 1) +
-    '<circle id="halo1" r="850" fill="black" opacity="0.5"/>' +
-    '<circle id="halo2" r="520" fill="black" opacity="1"/>' +
+    '<circle id="halo1" r="480" fill="black" opacity="0.5"/>' +
+    '<circle id="halo2" r="300" fill="black" opacity="1"/>' +
     '</mask></defs>' +
     '<rect x="0" y="0" width="5000" height="4344" fill="#0b0b16" opacity="0.74" mask="url(#fogmask)"/>';
   L.svgOverlay(svg, bounds).addTo(map);
@@ -173,6 +207,26 @@ async function init() {
     {className: '', html: '<div class="tok"></div>', iconSize: [24,24], iconAnchor: [12,12]})
   }).addTo(map);
 
+  // leg milestone stars at each leg's destination
+  try {
+    const route = await fetch('/api/route').then(r => r.json());
+    routeLegs = route.legs || [];
+    const totalMi = routeLegs.reduce((a, l) => a + l.distance, 0);
+    let cum = 0;
+    routeLegs.forEach((leg, idx) => {
+      cum += leg.distance;
+      const m = L.marker(pointAt(cum / totalMi * totalPx), {
+        icon: L.divIcon({className: '', html: `<div class="star" data-i="${idx}">★</div>`,
+                         iconSize: [22, 22], iconAnchor: [11, 11]}),
+        title: leg.name,
+      });
+      m.bindTooltip(`<b>${leg.name}</b><br>${leg.from} → ${leg.to}<br>${(leg.distance * 1.60934).toFixed(0)} km`);
+      m.addTo(map);
+    });
+  } catch (e) { /* milestones optional */ }
+
+  addOverlays();
+
   document.getElementById('zin').onclick = () => map.zoomIn();
   document.getElementById('zout').onclick = () => map.zoomOut();
   document.getElementById('zloc').onclick = () => { if (lastPos) map.panTo(lastPos); };
@@ -181,6 +235,32 @@ async function init() {
 
   tick(); setInterval(tick, 2000);
   loadMarches(); setInterval(loadMarches, 10000);
+}
+
+const OVERLAY_ICONS = { encounter: '/icons/eye.svg', battle: '/icons/swords.svg', death: '/icons/coffin.svg' };
+
+// Event overlays from the Middle-earth map data (toggleable layers).
+async function addOverlays() {
+  const markers = await fetch('/markers.json').then(r => r.json()).catch(() => []);
+  const groups = { 'Encounters': L.layerGroup(), 'Battles': L.layerGroup(), 'Deaths': L.layerGroup() };
+  for (const m of markers) {
+    const ev = (m.tags && m.tags.events) || [];
+    let g = null, kind = null;
+    if (ev.includes('encounter')) { g = 'Encounters'; kind = 'encounter'; }
+    else if (ev.includes('battle')) { g = 'Battles'; kind = 'battle'; }
+    else if (ev.includes('death')) { g = 'Deaths'; kind = 'death'; }
+    if (!g) continue;
+    const marker = L.marker([YTOP - m.y, m.x], {
+      icon: L.icon({ iconUrl: OVERLAY_ICONS[kind], iconSize: [26, 26],
+                     iconAnchor: [13, 26], popupAnchor: [0, -24] }),
+      title: m.title,
+    });
+    const link = m.infoLink ? `<br><a href="${m.infoLink}" target="_blank" rel="noopener">Learn more</a>` : '';
+    marker.bindPopup(`<b>${m.title}</b><br>${m.description || ''}${link}`);
+    groups[g].addLayer(marker);
+  }
+  for (const g of Object.values(groups)) g.addTo(map);
+  L.control.layers(null, groups, { collapsed: false }).addTo(map);
 }
 
 async function tick() {
@@ -209,6 +289,25 @@ async function tick() {
   document.getElementById('leg-line').textContent =
     `Leg ${s.leg_index + 1}/${s.leg_count} — ${s.leg_name}`;
   document.getElementById('leg-bar').style.width = `${(s.leg_frac * 100).toFixed(0)}%`;
+  document.querySelectorAll('.star').forEach(el => {
+    const i = +el.dataset.i;
+    el.classList.toggle('target', i === s.leg_index);
+    el.classList.toggle('done', i < s.leg_index);
+  });
+  const leg = routeLegs[s.leg_index];
+  if (leg) {
+    const legKm = leg.distance * 1.60934;
+    const remainKm = Math.max(0, (1 - s.leg_frac) * legKm);
+    const pace = s.pace_kmh || 2.5;
+    document.getElementById('leg-detail').textContent =
+      `${legKm.toFixed(0)} km leg · ${remainKm.toFixed(1)} km to ${leg.to} · ` +
+      `≈ ${fmtEta(remainKm / pace)} at ${pace.toFixed(1)} km/h`;
+  }
+  if (typeof s.today_steps === 'number') {
+    lastTodaySteps = s.today_steps;
+    document.getElementById('steps-today').textContent =
+      `${s.today_steps.toLocaleString()} steps today`;
+  }
   const streak = s.streak ? ` · 🔥 ${s.streak}-day streak` : '';
   document.getElementById('dist-line').textContent =
     `Today ${s.today_km.toFixed(1)} km · Total ${s.total_km.toFixed(1)} km${streak}`;
@@ -219,18 +318,54 @@ async function tick() {
 }
 
 async function loadMarches() {
-  const data = await fetch('/api/marches?limit=8').then(r => r.json()).catch(() => null);
+  const data = await fetch('/api/marches?limit=500').then(r => r.json()).catch(() => null);
   if (!data) return;
+  const marches = data.marches;
   const ul = document.getElementById('march-log');
-  ul.innerHTML = data.marches.length ? '' : '<li>No marches yet — walk!</li>';
-  for (const m of data.marches) {
+  ul.innerHTML = marches.length ? '' : '<li>No marches yet — walk!</li>';
+  for (const m of marches.slice(0, 8)) {
     const d = new Date(m.started_at);
     const mins = Math.round(m.duration_s / 60);
     const li = document.createElement('li');
     li.textContent = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` +
       ` — ${(m.distance_m/1000).toFixed(1)} km in ${mins} min` +
-      (m.avg_speed_kmh ? ` @ ${m.avg_speed_kmh.toFixed(1)} km/h` : '');
+      (m.avg_speed_kmh ? ` @ ${m.avg_speed_kmh.toFixed(1)} km/h` : '') +
+      (m.steps ? ` · ${m.steps.toLocaleString()} steps` : '');
     ul.appendChild(li);
+  }
+  renderStepsGraph(marches);
+}
+
+function dayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function renderStepsGraph(marches) {
+  const el = document.getElementById('steps-graph');
+  if (!el) return;
+  const now = new Date();
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    days.push({ key: dayKey(d), label: d.toLocaleDateString([], { weekday: 'narrow' }),
+                steps: 0, today: i === 0 });
+  }
+  const byKey = Object.fromEntries(days.map(d => [d.key, d]));
+  for (const m of marches) {
+    const day = byKey[dayKey(new Date(m.started_at))];
+    if (day && m.steps) day.steps += m.steps;
+  }
+  const today = days[days.length - 1];
+  today.steps = Math.max(today.steps, lastTodaySteps);
+  const max = Math.max(1, ...days.map(d => d.steps));
+  el.innerHTML = '';
+  for (const d of days) {
+    const col = document.createElement('div');
+    col.className = 'bar-col' + (d.today ? ' today' : '');
+    col.title = `${d.steps.toLocaleString()} steps`;
+    col.innerHTML = `<div class="bar" style="height:${Math.max(2, Math.round(d.steps / max * 80))}px"></div>` +
+                    `<div class="lbl">${d.label}</div>`;
+    el.appendChild(col);
   }
 }
 
