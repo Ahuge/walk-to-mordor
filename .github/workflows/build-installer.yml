@@ -1,0 +1,39 @@
+name: Build installer on release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pywebview bleak
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes
+
+      - name: Build installer
+        # Release tag like v1.2.3 -> version 1.2.3 for the installer.
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}" -replace '^v',''
+          python tools/build_installer.py --version $ver
+
+      - name: Upload installer to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/WalkToMordorSetup-*.exe
