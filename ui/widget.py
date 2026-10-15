@@ -53,11 +53,10 @@ class Api:
 
     Window position goes through raw Win32 (FindWindow/GetWindowRect/
     SetWindowPos) — pywebview's own x/y/move properties recurse on
-    frameless windows.
+    frameless windows. The bridge holds no Window reference at all.
     """
 
     def __init__(self):
-        self.win = None
         self._drag = None
         self._hwnd = None
 
@@ -102,8 +101,14 @@ class Api:
         self._drag = None
 
     def close(self):
-        if self.win:
-            self.win.destroy()
+        try:
+            import ctypes
+
+            hwnd = self._hwnd_()
+            if hwnd:
+                ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+        except Exception:
+            pass
 
 
 def _move_bottom_right():
@@ -166,7 +171,6 @@ def main() -> None:
         on_top=True,
         js_api=api,
     )
-    api.win = win
 
     def on_loaded():
         _move_bottom_right()
