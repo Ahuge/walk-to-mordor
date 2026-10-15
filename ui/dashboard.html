@@ -58,6 +58,10 @@
     box-shadow:0 0 6px rgba(212,175,55,.6); }
   #steps-graph .lbl { font-size:9px; color:#9a8c6d; }
   body.widget #steps-card { display:none; }
+  #toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%) translateY(20px);
+    background:#8c3b2e; color:#f3e9d2; padding:10px 16px; border-radius:8px; font-size:14px;
+    opacity:0; pointer-events:none; transition:all .25s; z-index:2000; max-width:90vw; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   footer { text-align:center; color:#9a8c6d; font-size:12px; margin-top:14px; font-style:italic; }
   #mini-status { display:none; }
 
@@ -134,6 +138,7 @@
   </aside>
 </main>
 <footer>Map: Yohann Bethoule / middleearthmap.app (base map by lotrproject.com) — used with permission.</footer>
+<div id="toast"></div>
 
 <script src="/leaflet.js"></script>
 <script>
@@ -370,19 +375,43 @@ function renderStepsGraph(marches) {
 }
 
 async function cmd(op, args = {}) {
-  await fetch('/api/commands', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({op, args}),
-  });
+  try {
+    const r = await fetch('/api/commands', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({op, args}),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(`Belt command failed: ${data.error || r.status}`); return null; }
+    return data;
+  } catch (e) {
+    toast('Belt command failed: no connection to daemon');
+    return null;
+  }
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), 3500);
+}
+// −/+ while walking adjusts speed live. At rest the pad takes no targets,
+// so offer to start the belt at the new speed instead of silently queuing.
+function nudge(delta) {
+  const base = lastSpeed > 0.05 ? lastSpeed : 2.0;
+  const kmh = Math.max(0.5, Math.round((base + delta) * 2) / 2);
+  if (lastSpeed > 0.05) {
+    cmd('set_speed', {kmh});
+  } else if (confirm(`Start the belt at ${kmh.toFixed(1)} km/h? Area clear, safety key in?`)) {
+    (async () => { if (await cmd('set_speed', {kmh})) await cmd('start'); })();
+  }
 }
 document.getElementById('btn-start').onclick = () => {
   if (confirm('Belt will start shortly. Area clear, safety key in?')) cmd('start');
 };
 document.getElementById('btn-stop').onclick = () => cmd('stop');
-document.getElementById('btn-slower').onclick = () =>
-  cmd('set_speed', {kmh: Math.max(0.5, (lastSpeed > 0.05 ? lastSpeed : 2.0) - 0.5)});
-document.getElementById('btn-faster').onclick = () =>
-  cmd('set_speed', {kmh: (lastSpeed > 0.05 ? lastSpeed : 2.0) + 0.5});
+document.getElementById('btn-slower').onclick = () => nudge(-0.5);
+document.getElementById('btn-faster').onclick = () => nudge(0.5);
 
 init();
 </script>
