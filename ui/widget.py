@@ -11,11 +11,21 @@ Requires: pip install pywebview
 """
 
 import sys
+import tempfile
 from pathlib import Path
 
 URL = "http://127.0.0.1:8471/?widget=1"
 TITLE = "Walk to Mordor"
 WIDTH, HEIGHT = 320, 300
+
+# Debug log for drag diagnosis.
+_DBG = Path(tempfile.gettempdir()) / "wtm_widget_debug.log"
+def _dbg(msg):
+    try:
+        with open(_DBG, "a") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
 
 # Drag handle + close button + resize grip injected into the page
 # (frameless windows have no title bar). The hand is a press-and-drag
@@ -115,15 +125,18 @@ class Api:
         return rect.left, rect.top
 
     def dragstart(self, sx, sy):
+        _dbg(f"dragstart sx={sx} sy={sy}")
         try:
             wx, wy = self._pos()
             self._drag = (sx, sy, wx, wy)
-        except Exception:
+        except Exception as e:
+            _dbg(f"dragstart failed: {e}")
             self._drag = None
 
     def dragmove(self, sx, sy):
         if not self._drag:
             return
+        _dbg(f"dragmove sx={sx} sy={sy} drag={self._drag}")
         try:
             import ctypes
 
@@ -132,7 +145,8 @@ class Api:
             # SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE
             ctypes.windll.user32.SetWindowPos(self._hwnd_(), 0,
                                               nx, ny, 0, 0, 0x0015)
-        except Exception:
+        except Exception as e:
+            _dbg(f"dragmove failed: {e}")
             pass
 
     def dragend(self):
