@@ -68,6 +68,8 @@ DRAG_JS = """
   hand.addEventListener('mousedown', function(e) {
     dragging = true;
     sx = e.screenX; sy = e.screenY;
+    try { window.pywebview.api.jslog('hand mousedown target=' +
+      (e.target.tagName || '?')); } catch (err) {}
     window.pywebview.api.dragstart(sx, sy);
     hand.style.background = 'rgba(176,141,43,.9)';
     e.preventDefault(); e.stopPropagation();
@@ -114,6 +116,9 @@ class Api:
         if not self._hwnd:
             self._hwnd = _widget_hwnd()
         return self._hwnd
+
+    def jslog(self, msg):
+        _dbg(f"js: {msg}")
 
     def _pos(self):
         import ctypes
