@@ -153,7 +153,11 @@ def _set_window_icon():
 def main() -> None:
     try:
         import webview
-        print("pywebview", webview.__version__)
+        try:
+            from importlib.metadata import version
+            print("pywebview", version("pywebview"))
+        except Exception:
+            pass
     except ImportError:
         sys.exit("pywebview is not installed. Run:  pip install pywebview")
     framed = "--framed" in sys.argv
