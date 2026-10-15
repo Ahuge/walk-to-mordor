@@ -84,13 +84,13 @@
     display:flex; gap:6px; }
   body.widget #belt-card h2 { display:none; }
   body.widget #belt-card .btnrow { flex:1 1 0; display:flex; gap:6px; margin-top:0; min-width:0; }
-  body.widget #belt-card .btnrow button { flex:1 1 0; min-width:0; padding:10px 0;
-    font-size:14px; margin-top:0; }
+  body.widget #belt-card .btnrow button { flex:1 1 0; min-width:0; padding:7px 0;
+    font-size:11px; margin-top:0; }
   body.widget .wide-only { display:none; }
   body.widget .map-btns { top:8px; left:8px; }
   body.widget .map-btns button { width:30px; height:30px; font-size:15px; }
   body.widget #mini-status { display:block; position:absolute; left:46px; bottom:8px; z-index:500;
-    background:rgba(28,26,23,.85); color:#f3e9d2; font-size:16px; padding:4px 8px;
+    background:rgba(28,26,23,.85); color:#f3e9d2; font-size:14px; padding:4px 8px;
     border-radius:6px; font-style:italic; pointer-events:none; max-width:calc(100% - 60px);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
@@ -286,12 +286,11 @@ const OVERLAY_ICONS = { encounter: '/icons/eye.svg', battle: '/icons/swords.svg'
 // Event overlays from the Middle-earth map data (toggleable layers).
 async function addOverlays() {
   const markers = await fetch('/markers.json').then(r => r.json()).catch(() => []);
-  const groups = { 'Encounters': L.layerGroup(), 'Battles': L.layerGroup(), 'Deaths': L.layerGroup() };
+  const groups = { 'Encounters': L.layerGroup(), 'Deaths': L.layerGroup() };
   for (const m of markers) {
     const ev = (m.tags && m.tags.events) || [];
     let g = null, kind = null;
     if (ev.includes('encounter')) { g = 'Encounters'; kind = 'encounter'; }
-    else if (ev.includes('battle')) { g = 'Battles'; kind = 'battle'; }
     else if (ev.includes('death')) { g = 'Deaths'; kind = 'death'; }
     if (!g) continue;
     const marker = L.marker([YTOP - m.y, m.x], {
@@ -303,9 +302,7 @@ async function addOverlays() {
     marker.bindPopup(`<b>${m.title}</b><br>${m.description || ''}${link}`);
     groups[g].addLayer(marker);
   }
-  for (const [name, g] of Object.entries(groups)) {
-    if (name !== 'Battles') g.addTo(map);  // battles off by default
-  }
+  for (const [name, g] of Object.entries(groups)) g.addTo(map);
   L.control.layers(null, groups, { collapsed: false }).addTo(map);
 }
 

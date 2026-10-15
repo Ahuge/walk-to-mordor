@@ -2,9 +2,9 @@
 """Floating always-on-top widget for Walk to Mordor.
 
 Borderless always-on-top window showing the dashboard's widget view
-(zoomable minimap + Start/Stop/speed controls). Drag by the top strip,
-close with the × button (or Alt+F4). The daemon must be running
-(http://127.0.0.1:8471/).
+(zoomable minimap + Start/Stop/speed controls). Opens bottom-right.
+Drag by the top strip, close with the × button (or Alt+F4).
+The daemon must be running (http://127.0.0.1:8471/).
 
 Requires: pip install pywebview
 (On Windows this uses the built-in WebView2/Edge engine.)
@@ -15,6 +15,7 @@ from pathlib import Path
 
 URL = "http://127.0.0.1:8471/?widget=1"
 TITLE = "Walk to Mordor"
+WIDTH, HEIGHT = 320, 300
 
 # Drag strip + close button injected into the page (frameless windows
 # have no title bar to drag or close with).
@@ -71,6 +72,21 @@ class Api:
             self.win.destroy()
 
 
+def _launch_xy():
+    """Bottom-right of the work area (screen minus taskbar)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        rect = wintypes.RECT()
+        # SPI_GETWORKAREA = 0x0030
+        ctypes.windll.user32.SystemParametersInfoW(0x0030, 0,
+                                                   ctypes.byref(rect), 0)
+        return (rect.right - WIDTH - 12, rect.bottom - HEIGHT - 12)
+    except Exception:
+        return (None, None)
+
+
 def _set_window_icon():
     """Best-effort: give the frameless window our icon on Windows."""
     try:
@@ -97,24 +113,26 @@ def main() -> None:
     except ImportError:
         sys.exit("pywebview is not installed. Run:  pip install pywebview")
     api = Api()
-    win = webview.create_window(
-        TITLE,
-        URL,
-        width=320,
-        height=300,
-        min_size=(240, 200),
-        frameless=True,
-        on_top=True,
-        js_api=api,
-    )
+    x, y = _launch_xy()
+    kwargs = dict(width=WIDTH, height=HEIGHT, min_size=(240, 200),
+                  frameless=True, on_top=True, js_api=api)
+    if x is not None:
+        kwargs["x"], kwargs["y"] = x, y
+    win = webview.create_window(TITLE, URL, **kwargs)
     api.win = win
 
     def on_loaded():
-        win.evaluate_js(DRAG_JS)
+        try:
+            win.evaluate_js(DRAG_JS)
+        except Exception:
+            pass
         _set_window_icon()
 
     win.events.loaded += on_loaded
-    webview.start()
+    try:
+        webview.start()
+    except Exception as e:
+        sys.exit(f"widget failed to start: {e}")
 
 
 if __name__ == "__main__":
