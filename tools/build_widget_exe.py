@@ -20,6 +20,13 @@ ICON = REPO / "packs" / "lotr" / "art" / "icon.ico"
 def main() -> None:
     if not ICON.exists():
         sys.exit(f"icon not found: {ICON}")
+    exe = REPO / "dist" / "WalkToMordorWidget.exe"
+    # The old exe locks itself while running; stop it before rebuilding.
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/f", "/im", "WalkToMordorWidget.exe"],
+            capture_output=True,
+        )
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
@@ -32,7 +39,6 @@ def main() -> None:
     ]
     print("building…")
     subprocess.run(cmd, cwd=REPO, check=True)
-    exe = REPO / "dist" / "WalkToMordorWidget.exe"
     print(f"done: {exe}")
     print("The daemon must still be running (http://127.0.0.1:8471/).")
 

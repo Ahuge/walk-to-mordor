@@ -92,6 +92,16 @@
   body.widget .wide-only { display:none; }
   body.widget .map-btns { top:8px; left:8px; }
   body.widget .map-btns button { width:30px; height:30px; font-size:15px; }
+  /* Layer control: below the hand/× buttons, dark transparent to match. */
+  body.widget .leaflet-control-layers {
+    margin-top: 26px;
+    background: rgba(28,26,23,.85);
+    border: 1px solid rgba(243,233,210,.2);
+    border-radius: 8px;
+    color: #f3e9d2;
+    font-size: 12px;
+  }
+  body.widget .leaflet-control-layers label span { color: #f3e9d2; }
   body.widget #mini-status { display:block; position:absolute; left:46px; bottom:8px; z-index:500;
     background:rgba(28,26,23,.85); color:#f3e9d2; font-size:12px; padding:4px 8px;
     border-radius:6px; font-style:italic; pointer-events:none; max-width:calc(100% - 60px);
