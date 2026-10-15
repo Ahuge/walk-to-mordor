@@ -357,11 +357,15 @@ async function tick() {
   for (const layer of fogLayers) layer.setAttribute('points', pts);
   for (const halo of fogHalos) { halo.setAttribute('cx', px); halo.setAttribute('cy', py); }
 
-  document.getElementById('status-line').textContent =
-    s.walking ? `Walking @ ${s.speed_kmh.toFixed(1)} km/h` : 'At rest';
-  document.getElementById('leg-line').textContent =
-    `Leg ${s.leg_index + 1}/${s.leg_count} — ${s.leg_name}`;
-  document.getElementById('leg-bar').style.width = `${(s.leg_frac * 100).toFixed(0)}%`;
+  const setText = (id, txt) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  };
+  const spd = (s.speed_kmh || 0).toFixed(1);
+  setText('status-line', s.walking ? `Walking @ ${spd} km/h` : 'At rest');
+  setText('leg-line', `Leg ${s.leg_index + 1}/${s.leg_count} — ${s.leg_name}`);
+  const legBar = document.getElementById('leg-bar');
+  if (legBar) legBar.style.width = `${(s.leg_frac * 100).toFixed(0)}%`;
   document.querySelectorAll('.star').forEach(el => {
     const i = +el.dataset.i;
     el.classList.toggle('target', i === s.leg_index);
@@ -372,21 +376,20 @@ async function tick() {
     const legKm = leg.distance * 1.60934;
     const remainKm = Math.max(0, (1 - s.leg_frac) * legKm);
     const pace = s.pace_kmh || 2.5;
-    document.getElementById('leg-detail').textContent =
+    setText('leg-detail',
       `${legKm.toFixed(0)} km leg · ${remainKm.toFixed(1)} km to ${leg.to} · ` +
-      `≈ ${fmtEta(remainKm / pace)} at ${pace.toFixed(1)} km/h`;
+      `≈ ${fmtEta(remainKm / pace)} at ${pace.toFixed(1)} km/h`);
   }
   if (typeof s.today_steps === 'number') {
     lastTodaySteps = s.today_steps;
-    document.getElementById('steps-today').textContent =
-      `${s.today_steps.toLocaleString()} steps today`;
+    setText('steps-today', `${s.today_steps.toLocaleString()} steps today`);
   }
   const streak = s.streak ? ` · 🔥 ${s.streak}-day streak` : '';
-  document.getElementById('dist-line').textContent =
-    `Today ${s.today_km.toFixed(1)} km · Total ${s.total_km.toFixed(1)} km${streak}`;
+  setText('dist-line',
+    `Today ${s.today_km.toFixed(1)} km · Total ${s.total_km.toFixed(1)} km${streak}`);
   const ms = document.getElementById('mini-status');
   if (ms) ms.textContent =
-    `${s.walking ? `Walking ${s.speed_kmh.toFixed(1)} km/h` : 'At rest'} · ` +
+    `${s.walking ? `Walking ${spd} km/h` : 'At rest'} · ` +
     `Leg ${s.leg_index + 1}/${s.leg_count} · ${s.today_km.toFixed(1)} km today`;
   lastWalking = !!s.walking;
   const tg = document.getElementById('btn-toggle');

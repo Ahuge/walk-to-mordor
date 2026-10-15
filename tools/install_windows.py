@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Install (or remove) the Walk to Mordor daemon as a Windows logon task.
+"""Install (or remove) Walk to Mordor as Windows logon tasks.
 
-The task runs at every logon under pythonw (no console window) and keeps
-the BLE bridge alive in the background.
+The daemon task runs at every logon under pythonw (no console window)
+and keeps the BLE bridge alive in the background. The optional widget
+task launches the floating map widget after the daemon is up.
 
 Usage:
     python tools/install_windows.py              # install / refresh daemon
+    python tools/install_windows.py --widget     # also auto-start the widget
     python tools/install_windows.py --minimap    # also auto-start the minimap
     python tools/install_windows.py --uninstall  # remove
 """
@@ -15,26 +17,42 @@ import sys
 from pathlib import Path
 
 TASK_NAME = "WalkToMordor"
+WIDGET_TASK_NAME = "WalkToMordorWidget"
 MINIMAP_TASK_NAME = "WalkToMordorMinimap"
 
 
-def _create_task(name: str, target: Path) -> None:
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
-    if not pythonw.exists():
-        sys.exit(f"pythonw.exe not found next to {sys.executable}")
-    task_run = f'"{pythonw}" "{target}"'
-    subprocess.run(
-        ["schtasks", "/create", "/tn", name,
-         "/tr", task_run, "/sc", "onlogon", "/rl", "limited", "/f"],
-        check=True,
-    )
+def _create_task(name: str, target: Path, delay_s: int = 0) -> None:
+    if target.suffix.lower() == ".exe":
+        task_run = f'"{target}"'
+    else:
+        pythonw = Path(sys.executable).with_name("pythonw.exe")
+        if not pythonw.exists():
+            sys.exit(f"pythonw.exe not found next to {sys.executable}")
+        task_run = f'"{pythonw}" "{target}"'
+    cmd = ["schtasks", "/create", "/tn", name,
+           "/tr", task_run, "/sc", "onlogon", "/rl", "limited", "/f"]
+    if delay_s:
+        cmd += ["/delay", f"0000:{delay_s:02d}"]
+    subprocess.run(cmd, check=True)
     print(f"installed: logon task '{name}'")
-    print(f"  runs: {task_run}")
+    print(f"  runs: {task_run}" + (f" (delay {delay_s}s)" if delay_s else ""))
+
+
+def _ensure_widget_exe(repo: Path) -> Path:
+    exe = repo / "dist" / "WalkToMordorWidget.exe"
+    if exe.exists():
+        return exe
+    print("widget exe not found, building…")
+    subprocess.run([sys.executable, "tools/build_widget_exe.py"],
+                   cwd=repo, check=True)
+    if not exe.exists():
+        sys.exit("widget build did not produce the exe")
+    return exe
 
 
 def main() -> None:
     if "--uninstall" in sys.argv:
-        for name in (TASK_NAME, MINIMAP_TASK_NAME):
+        for name in (TASK_NAME, WIDGET_TASK_NAME, MINIMAP_TASK_NAME):
             subprocess.run(
                 ["schtasks", "/delete", "/tn", name, "/f"], check=False)
         print("tasks removed (if they existed)")
@@ -47,6 +65,9 @@ def main() -> None:
         sys.exit(f"daemon not found: {daemon}")
     _create_task(TASK_NAME, daemon)
     print("  data: %LOCALAPPDATA%\\walk-to-mordor\\walks.db")
+    if "--widget" in sys.argv:
+        exe = _ensure_widget_exe(repo)
+        _create_task(WIDGET_TASK_NAME, exe, delay_s=30)
     if "--minimap" in sys.argv:
         minimap = repo / "ui" / "minimap.py"
         if not minimap.exists():
@@ -54,6 +75,8 @@ def main() -> None:
         _create_task(MINIMAP_TASK_NAME, minimap)
     print("Take effect on next logon, or start now with:")
     print(f'  schtasks /run /tn "{TASK_NAME}"')
+    if "--widget" in sys.argv:
+        print(f'  schtasks /run /tn "{WIDGET_TASK_NAME}"')
 
 
 if __name__ == "__main__":
