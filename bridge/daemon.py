@@ -5,6 +5,7 @@ Long-running process (runs under pythonw on Windows: no console window):
   * watches for the UREVO pad over BLE and auto-connects when it appears
   * streams 1/sec FTMS treadmill data into SQLite
   * detects marches (belt start/stop with idle tolerance) and writes summaries
+  * executes queued belt-control commands (start/stop/speed/incline)
 
 Storage:
   Windows: %LOCALAPPDATA%\\walk-to-mordor\\walks.db (+ daemon.log)
@@ -13,11 +14,12 @@ Storage:
 Usage:
   Foreground (verify it works):  python bridge/daemon.py
   Install as a logon task:       python tools/install_windows.py
+  Queue a belt command:           python treadmill/control.py start|stop|speed|incline
 """
 
 import asyncio
+import json
 import logging
-import os
 import signal
 import sqlite3
 import sys
@@ -30,6 +32,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bleak import BleakClient  # noqa: E402
 
+from bridge.store import data_dir, open_db  # noqa: E402
+from treadmill.control import (  # noqa: E402
+    COMMAND_TTL_S,
+    CONTROL_POINT_UUID,
+    TreadmillController,
+)
 from treadmill.reader import (  # noqa: E402
     TREADMILL_DATA_UUID,
     find_pad,
@@ -42,42 +50,6 @@ SPEED_THRESHOLD_KMH = 0.05
 
 log = logging.getLogger("walk-to-mordor")
 stop_requested = threading.Event()
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS readings (
-    ts TEXT PRIMARY KEY,
-    speed_kmh REAL,
-    distance_m INTEGER,
-    incline_pct REAL,
-    calories INTEGER,
-    elapsed_s INTEGER,
-    steps INTEGER
-);
-CREATE TABLE IF NOT EXISTS marches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    started_at TEXT NOT NULL,
-    ended_at TEXT NOT NULL,
-    duration_s INTEGER NOT NULL,
-    distance_m INTEGER NOT NULL,
-    calories INTEGER,
-    steps INTEGER,
-    avg_speed_kmh REAL,
-    max_incline_pct REAL
-);
-CREATE TABLE IF NOT EXISTS meta (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
-"""
-
-
-def data_dir() -> Path:
-    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
-        d = Path(os.environ["LOCALAPPDATA"]) / "walk-to-mordor"
-    else:
-        d = Path.home() / ".walk-to-mordor"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 def setup_logging(log_path: Path) -> None:
@@ -173,6 +145,71 @@ class MarchTracker:
         self.last = {}
 
 
+def claim_next_command(db: sqlite3.Connection, lock: threading.Lock):
+    with lock:
+        row = db.execute(
+            "SELECT id, op, args, created_at FROM commands"
+            " WHERE status='pending' ORDER BY id LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        cur = db.execute(
+            "UPDATE commands SET status='running'"
+            " WHERE id=? AND status='pending'", (row[0],))
+        db.commit()
+        return row if cur.rowcount else None
+
+
+def finish_command(db, lock, cmd_id, status, result) -> None:
+    with lock:
+        db.execute(
+            "UPDATE commands SET status=?, result=?, done_at=? WHERE id=?",
+            (status, json.dumps(result),
+             datetime.now(timezone.utc).isoformat(timespec="seconds"), cmd_id),
+        )
+        db.commit()
+
+
+async def command_worker(controller: TreadmillController,
+                         db: sqlite3.Connection,
+                         lock: threading.Lock) -> None:
+    """Execute queued belt-control commands sequentially while connected."""
+    while not stop_requested.is_set():
+        cmd = claim_next_command(db, lock)
+        if cmd is None:
+            await asyncio.sleep(1)
+            continue
+        cmd_id, op, args_json, created_at = cmd
+        age = (datetime.now(timezone.utc)
+               - datetime.fromisoformat(created_at)).total_seconds()
+        if age > COMMAND_TTL_S:
+            finish_command(db, lock, cmd_id, "expired",
+                           {"ok": False, "reason": f"stale ({int(age)}s old)"})
+            log.info("command %d expired (stale)", cmd_id)
+            continue
+        args = json.loads(args_json or "{}")
+        log.info("executing command %d: %s %s", cmd_id, op, args)
+        try:
+            if op == "start":
+                ok = await controller.start()
+            elif op == "stop":
+                ok = await controller.stop()
+            elif op == "set_speed":
+                ok = await controller.set_speed(float(args["kmh"]))
+            elif op == "set_incline":
+                ok = await controller.set_incline(float(args["pct"]))
+            else:
+                finish_command(db, lock, cmd_id, "error",
+                               {"ok": False, "reason": f"unknown op {op!r}"})
+                continue
+            finish_command(db, lock, cmd_id,
+                           "done" if ok else "error", {"ok": ok})
+        except Exception as e:  # noqa: BLE001
+            log.exception("command %d (%s) failed", cmd_id, op)
+            finish_command(db, lock, cmd_id, "error",
+                           {"ok": False, "reason": str(e)})
+
+
 async def sleep_or_stop(seconds: float) -> None:
     """Sleep, but wake early if a stop was requested."""
     try:
@@ -190,9 +227,7 @@ async def run() -> None:
     # check_same_thread=False: bleak may invoke notify callbacks off the
     # event-loop thread on some backends; all writes go through the lock.
     lock = threading.Lock()
-    db = sqlite3.connect(ddir / "walks.db", check_same_thread=False)
-    db.execute("PRAGMA journal_mode=WAL;")
-    db.executescript(SCHEMA)
+    db = open_db()
     tracker = MarchTracker(db, lock)
     log.info("daemon started, db=%s", ddir / "walks.db")
 
@@ -213,6 +248,16 @@ async def run() -> None:
         try:
             async with BleakClient(device) as client:
                 log.info("connected")
+                state = {"row": {}}
+                controller = TreadmillController(
+                    client,
+                    lambda: (state["row"].get("speed_kmh") or 0.0),
+                    log,
+                )
+                await controller.setup()
+                if not await controller.request_control():
+                    log.warning("request control failed;"
+                                " belt commands will error")
 
                 def on_notify(_sender, data: bytearray):
                     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -228,18 +273,29 @@ async def run() -> None:
                              row.get("elapsed_s"), row.get("steps")),
                         )
                         db.commit()
+                    state["row"] = row
                     tracker.reading(ts, row)
 
                 await client.start_notify(TREADMILL_DATA_UUID, on_notify)
-                while not stop_requested.is_set() and client.is_connected:
-                    await asyncio.sleep(1)
+                worker = asyncio.create_task(
+                    command_worker(controller, db, lock))
                 try:
-                    await client.stop_notify(TREADMILL_DATA_UUID)
-                except Exception:
-                    pass
+                    while not stop_requested.is_set() and client.is_connected:
+                        await asyncio.sleep(1)
+                finally:
+                    worker.cancel()
+                    try:
+                        await worker
+                    except asyncio.CancelledError:
+                        pass
+                    for uuid in (CONTROL_POINT_UUID, TREADMILL_DATA_UUID):
+                        try:
+                            await client.stop_notify(uuid)
+                        except Exception:  # noqa: BLE001
+                            pass
                 if not client.is_connected:
                     log.info("disconnected")
-        except Exception:
+        except Exception:  # noqa: BLE001
             log.exception("connection error")
         finally:
             tracker.finish(datetime.now(timezone.utc))

@@ -55,6 +55,31 @@ python tools/install_windows.py --uninstall
 March summaries are the source for everything next: the nudge ("active on
 PC, no march today") and the minimap overlay both read `walks.db`.
 
+## Belt controls
+
+The daemon owns the pad's single Bluetooth connection, so all belt
+commands go through it via a `commands` table in the DB:
+
+```powershell
+python treadmill/control.py start          # 3-2-1 countdown, then belt starts
+python treadmill/control.py stop           # stop the belt
+python treadmill/control.py speed 4.0      # set target speed (km/h)
+python treadmill/control.py incline 3      # set target incline (%)
+python treadmill/control.py status         # show recent commands + results
+```
+
+The CLI queues the command and waits for the daemon to execute it
+(`--no-wait` to skip waiting). Commands older than 10 minutes are ignored
+as stale. Speed/incline are clamped to the pad's reported supported range.
+
+**Safety:**
+- The CLI counts down 3-2-1 before `start` — make sure the belt area is
+  clear (kids, pets) and the safety key is in before you confirm.
+- `stop` always works and clears any queued targets.
+- Targets are verified against the live 1/sec readings and retried if the
+  belt doesn't reach them; a stopped belt queues targets for the next start
+  instead of sending them (the pad ignores them otherwise).
+
 ## Troubleshooting
 
 **`BleakDBusError: org.bluez was not provided` (WSL):** you're running inside

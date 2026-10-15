@@ -44,8 +44,29 @@ Probed live via `treadmill/probe.py`:
 | `0x2ad4` Supported Speed Range | 3S: 1.0–6.0 km/h, 0.1 steps |
 | `0x2ad5` Supported Inclination Range | 3S: 0–9, step 1 |
 | `0x2acd` Treadmill Data | **notify, 1/sec** — the live feed |
-| `0x2ad9` Fitness Machine Control Point | write + indicate — start/stop/speed/incline (confirmed working on 3S) |
+| `0x2ad9` Fitness Machine Control Point | write + indicate — belt control (see below) |
 | `0x2ada` Machine Status | notify — belt state changes |
+
+## Control Point protocol (`0x2ad9`)
+
+Confirmed working (3S dump; 5L matches the layout). Write opcode, await the
+indication response `80 <opcode> 01`.
+
+| Write | Meaning |
+|---|---|
+| `00` | request control |
+| `07` | start / resume |
+| `02 <u16le>` | target speed, 0.01 km/h |
+| `03 <s16le>` | target inclination, 0.1 % |
+| `08 01` | stop |
+
+Quirks (from the dump): targets set right after start are lost — the belt
+spins up to 1 km/h first, so wait ~8 s and retry until the live reading
+matches. A stopped belt accepts no targets at all — remember them and
+re-send after start. Start confirmation can take ~7 s — allow a 10 s
+response timeout. Machine status (`0x2ada`) reports `04` on belt start,
+`02 01` / `02 02` on stop. Implemented in `treadmill/control.py`,
+executed by the daemon (which owns the single BLE connection).
 
 ## Treadmill Data packet (26 bytes, flags `0x259c`)
 
