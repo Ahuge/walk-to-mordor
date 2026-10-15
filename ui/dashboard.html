@@ -38,6 +38,29 @@
   #march-log li { padding:6px 0; border-bottom:1px solid #3a332a; color:#cbbb96; }
   #march-log li:last-child { border-bottom:none; }
   footer { text-align:center; color:#9a8c6d; font-size:12px; margin-top:14px; font-style:italic; }
+  #mini-status { display:none; }
+
+  /* ---- widget mode (~300x275): narrow viewport or ?widget=1 ----
+     Minimap on top (zoomable), compact [Start][Stop][−][+] row below. */
+  body.widget { padding:0; height:100vh; display:flex; flex-direction:column; }
+  body.widget header, body.widget footer { display:none; }
+  body.widget main { flex-direction:column; gap:0; max-width:none; margin:0; flex:1; min-height:0; }
+  body.widget #map-card { padding:0; border-radius:0; flex:1; min-height:0; display:flex; flex-direction:column; }
+  body.widget #map-wrap { flex:1; min-height:0; display:flex; flex-direction:column; }
+  body.widget #map { flex:1; height:auto; min-height:0; border-radius:0; }
+  body.widget aside { flex:none; min-width:0; }
+  body.widget #journey-card, body.widget #march-card { display:none; }
+  body.widget #belt-card { border-radius:0; padding:6px; display:flex; gap:6px; }
+  body.widget #belt-card h2 { display:none; }
+  body.widget #belt-card .btnrow { display:contents; }
+  body.widget #belt-card .btnrow button { padding:10px 0; font-size:14px; margin-top:0; }
+  body.widget .wide-only { display:none; }
+  body.widget .map-btns { top:8px; left:8px; }
+  body.widget .map-btns button { width:30px; height:30px; font-size:15px; }
+  body.widget #mini-status { display:block; position:absolute; left:46px; bottom:8px; z-index:500;
+    background:rgba(28,26,23,.85); color:#f3e9d2; font-size:11px; padding:4px 8px;
+    border-radius:6px; font-style:italic; pointer-events:none; max-width:calc(100% - 60px);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
 </head>
 <body>
@@ -49,6 +72,7 @@
   <div id="map-card">
     <div id="map-wrap">
       <div id="map"></div>
+      <div id="mini-status"></div>
       <div class="map-btns">
         <button id="zin" title="Zoom in">+</button>
         <button id="zout" title="Zoom out">−</button>
@@ -58,25 +82,25 @@
   </div>
 
   <aside>
-    <div class="card">
+    <div class="card" id="journey-card">
       <h2>Journey</h2>
       <div id="status-line">…</div>
       <div id="leg-line">…</div>
       <div class="bar"><div id="leg-bar"></div></div>
       <div id="dist-line">…</div>
     </div>
-    <div class="card">
+    <div class="card" id="belt-card">
       <h2>Belt</h2>
       <div class="btnrow">
         <button id="btn-start">Start</button>
         <button id="btn-stop" class="danger">Stop</button>
       </div>
       <div class="btnrow">
-        <button id="btn-slower">− speed</button>
-        <button id="btn-faster">+ speed</button>
+        <button id="btn-slower">−<span class="wide-only"> speed</span></button>
+        <button id="btn-faster">+<span class="wide-only"> speed</span></button>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="march-card">
       <h2>March log</h2>
       <ul id="march-log"><li>…</li></ul>
     </div>
@@ -88,6 +112,18 @@
 <script>
 const YTOP = 4334;
 let map, journey, cumPx, totalPx, token, fogLayers, fogHalos, lastPos = null, lastSpeed = 0;
+
+// Widget mode: narrow viewport (e.g. a 300x275 window) or ?widget=1 —
+// minimap on top, compact control row below.
+const widgetMQ = window.matchMedia('(max-width: 460px)');
+function applyWidgetMode() {
+  const on = widgetMQ.matches || new URLSearchParams(location.search).has('widget');
+  document.body.classList.toggle('widget', on);
+  if (map) setTimeout(() => map.invalidateSize(), 60);
+}
+widgetMQ.addEventListener('change', applyWidgetMode);
+let _rsz;
+window.addEventListener('resize', () => { clearTimeout(_rsz); _rsz = setTimeout(() => { if (map) map.invalidateSize(); }, 200); });
 
 function pointAt(d) {
   d = Math.max(0, Math.min(totalPx, d));
@@ -141,6 +177,8 @@ async function init() {
   document.getElementById('zout').onclick = () => map.zoomOut();
   document.getElementById('zloc').onclick = () => { if (lastPos) map.panTo(lastPos); };
 
+  applyWidgetMode();
+
   tick(); setInterval(tick, 2000);
   loadMarches(); setInterval(loadMarches, 10000);
 }
@@ -174,6 +212,10 @@ async function tick() {
   const streak = s.streak ? ` · 🔥 ${s.streak}-day streak` : '';
   document.getElementById('dist-line').textContent =
     `Today ${s.today_km.toFixed(1)} km · Total ${s.total_km.toFixed(1)} km${streak}`;
+  const ms = document.getElementById('mini-status');
+  if (ms) ms.textContent =
+    `${s.walking ? `Walking ${s.speed_kmh.toFixed(1)} km/h` : 'At rest'} · ` +
+    `Leg ${s.leg_index + 1}/${s.leg_count} · ${s.today_km.toFixed(1)} km today`;
 }
 
 async function loadMarches() {
