@@ -221,9 +221,18 @@ never leaves the house.
 
 - **Phase 0 — Prove it** (now): `probe.py` + `reader.py` against the real
   5L when it arrives (~Oct 12–14). Confirm FTMS layout matches the 3S dump.
-- **Phase 1 — Logger**: march detection (belt start/stop), SQLite store,
-  CLI progress ("412.3 / 1,779 mi — 23% to Mordor"). Engine built
-  pack-agnostic from day one: the LOTR pack is just the first data folder.
+- **Phase 1 — Always-on layer** (next, per Alex 2026-10-15):
+  - `bridge/daemon.py`: Windows background process (Task Scheduler at logon,
+    `pythonw`, no console). Watches for the pad, auto-connects on power-on,
+    logs 1/sec rows + march summaries to SQLite. March detection: belt
+    start/stop with idle tolerance.
+  - **Nudge**: if the user is active on the PC (idle < 5 min) but no march
+    logged today (weekdays, after ~9:30am), one Windows toast per day.
+    Configurable, never naggy.
+  - **Minimap**: tiny always-on-top tkinter overlay, toggleable — live route
+    position, today's distance, streak. Reads the same SQLite DB.
+  - Engine built pack-agnostic from day one: the LOTR pack is just the first
+    data folder.
 - **Phase 2 — Map & story**: dashboard with live SVG map, fog of war,
   leg beats + journal.
 - **Phase 3 — Game systems**: encounters, rituals, XP/levels, rest bonuses,
