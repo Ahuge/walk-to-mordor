@@ -1,1 +1,12 @@
+# Core: daemon, treadmill tools (BLE)
 bleak>=0.21
+
+# Floating widget GUI (pywebview)
+pywebview>=4.0
+
+# Desktop notifications for the daily nudge
+# (has a PowerShell fallback on Windows, so optional)
+plyer>=2.1
+
+# Build tools (Windows installer) — not needed at runtime
+pyinstaller>=6.0
