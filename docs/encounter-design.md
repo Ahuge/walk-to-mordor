@@ -90,14 +90,18 @@ Each includes: **Trigger**, **Player Action**, **Meeting-Friendly** (can do whil
 #### 9. Standing Stones (History Points)
 **Type:** Lore (location-based)
 **Trigger:** Within radius of a Tolkien location on the path.
-**Player Action:** Read the real history. Optional: take the "fork" detour (see Alex's idea).
+**Player Action:** Read the real history. Optional: take the "fork" detour.
+**Detour constraint:** No detour more than ~10km off the main path. If a POI is farther, it's lore-only (no detour offered).
 **Meeting-Friendly:** Yes.
 **Variation:** Requires research. Even 20-30 well-placed points across 1,779 miles is sparse but meaningful. Prioritize: Weathertop, Rivendell, Moria, Lothlórien, etc.
 
 #### 10. Battlefield Echoes
 **Type:** Lore (location-based)
 **Trigger:** At sites of canonical battles.
-**Player Action:** Experience a vignette of what happened there. May include a moment of silence (pause walking for 30s? optional).
+**Player Action:** A layered experience:
+1. **In-app blurb** (primary): 2-3 paragraphs of our writing — what happened here, who fought, what it felt like. Keeps the player in the app.
+2. **"Read more" link**: Opens the Tolkien Gateway wiki page for the battle in their browser. For the deep divers.
+3. **Custom art**: Each battlefield gets a unique SVG map marker (crossed swords variant, broken shield, etc.) in the LOTR art style.
 **Meeting-Friendly:** Yes.
 **Variation:** 8-10 major battles across the route. Each is a one-time, memorable moment.
 
@@ -129,9 +133,10 @@ Each includes: **Trigger**, **Player Action**, **Meeting-Friendly** (can do whil
 #### 14. Fellow Traveler
 **Type:** Social (companion)
 **Trigger:** Random on roads/paths (not wilderness).
-**Player Action:** An NPC walks with you for X km. Provides small bonus (morale +, or lore tidbits). Can dismiss.
+**Player Action:** An NPC walks with you for X km. Frequent conversation points — mostly inane, character-specific small talk (like a real walking companion filling time). Occasionally drops lore or hints. Can be dismissed.
+**Writing requirement:** 40-50 NPCs, each with substantial writing. Each NPC needs: backstory (2-3 paragraphs), 8-12 conversation snippets (the inane chatter), 2-3 lore/hint drops, and a farewell line. This is the biggest writing lift in the game.
 **Meeting-Friendly:** Yes.
-**Variation:** 15-20 NPCs with distinct personalities (chatty dwarf, silent ranger, nervous hobbit). Each has 3-4 dialogue snippets.
+**Variation:** Personality archetypes (chatty dwarf, silent ranger who only grunts, nervous hobbit, boastful human, mysterious elf). Dialogue frequency: every 0.5-1km.
 
 #### 15. The Race
 **Type:** Social (competitive)
@@ -145,9 +150,13 @@ Each includes: **Trigger**, **Player Action**, **Meeting-Friendly** (can do whil
 #### 16. Night's Rest
 **Type:** Rest (camp)
 **Trigger:** After X km in a day, or at "campsite" markers.
-**Player Action:** Choose to camp (ends the day's march with a bonus) or push on (morale penalty if tired).
+**Player Action:** Choose to camp or push on. This needs real stakes:
+- **Camp:** +morale, consume 1 supply for a meal (bigger morale boost), unlock campfire tale, reset fatigue. But: the day ends — no more distance credit until tomorrow (or 8h pass).
+- **Push on (when fatigued):** Keep earning distance, but fatigue accumulates: +25% hazard chance, -10% morale gains, small chance of "stumble" (lose 0.5km progress narrative).
+- **Push on (not fatigued):** No penalty, just no rest bonus.
+**Fatigue meter:** Builds over 10km of continuous walking. Resets on camp/inn.
 **Meeting-Friendly:** Yes.
-**Variation:** Campsite flavor, campfire story unlocked (see #20).
+**Variation:** Campsite flavor, campfire story unlocked.
 
 #### 17. Inn Respite
 **Type:** Rest (settlement)
@@ -162,6 +171,7 @@ Each includes: **Trigger**, **Player Action**, **Meeting-Friendly** (can do whil
 **Type:** Meta (persistent state)
 **Trigger:** Affected by choices, weather, companions, rest.
 **Player Action:** None directly — it's a background stat. High morale = +5% distance credit (you walk "lighter"). Low = -5%.
+**Decay:** Morale slowly drains back to neutral (0%) over 1-2 hours of walking. Positive and negative both fade. This prevents permanent buffs/debuffs and keeps the system dynamic.
 **Meeting-Friendly:** N/A (passive).
 **Variation:** Not content but a system. Visual: party mood indicator on dashboard.
 
@@ -169,15 +179,53 @@ Each includes: **Trigger**, **Player Action**, **Meeting-Friendly** (can do whil
 **Type:** Resource (choice)
 **Trigger:** Random in wild regions.
 **Player Action:** Choice: slow to 1 km/h for 500m to forage (gain supplies) OR push on (save time).
+**What supplies do:**
+- **Inn meals:** Spend 1 supply at an inn for a premium meal (+15 morale vs +5 for standard).
+- **Hazard bypass:** Eat lembas (1 supply) to ignore a Mire slowdown or Storm penalty once.
+- **NPC gift:** Give supplies to a Fellow Traveler to unlock their extra lore/hint dialogue.
+- **Camp:** Consume 1 supply at Night's Rest for a hearty meal (+10 morale).
 **Meeting-Friendly:** Yes — slowing down is fine.
-**Variation:** What's found (berries, mushrooms, lembas from a hidden cache). Supplies feed into Inn/Camp mechanics.
+**Variation:** What's found (berries, mushrooms, lembas from a hidden cache).
 
 #### 20. Campfire Tales
 **Type:** Story (unlockable, rest-gated)
 **Trigger:** Only at Night's Rest or Inn. Unlocks progressively.
 **Player Action:** Read a longer story (5-10 paragraphs). These are the "big" narratives — the Silmarillion tales, the history of the Ring, etc.
+**Narrative sources:** Tales can come from multiple sources — a book you carry, an innkeeper, OR a Fellow Traveler (if you've unlocked that NPC's story by traveling with them long enough). This makes companions more valuable.
 **Meeting-Friendly:** Yes.
 **Variation:** 12 tales, one per leg. Each is a self-contained Tolkien story relevant to where you are. This is the lore backbone.
+
+---
+
+## Map Icon Art
+
+No generic ❓/❗. Every encounter type needs a custom SVG icon in the LOTR art style (matching the existing map aesthetic — hand-drawn, parchment tones, minimal).
+
+### Icons Needed
+
+| Encounter | Icon Concept |
+|-----------|--------------|
+| Waystone Vignette | Carved standing stone |
+| Crossroads Choice | Forked path / signpost |
+| Dream/Vision | Closed eye with stars |
+| Pursuit! | Running figure / wolf head |
+| Silent Passage | Finger to lips / hooded figure |
+| Steep Climb | Mountain peak with path |
+| Rumor (unlocked) | Ear / whisper lines |
+| Map Fragment | Torn parchment piece |
+| History Point | Open book / scroll |
+| Battlefield | Crossed swords (unique per battle: broken shield, fallen banner, etc.) |
+| Mountain Hazard | Jagged peaks with snow |
+| Mire Hazard | Bubbling swamp / reeds |
+| Storm Hazard | Cloud with lightning |
+| Fellow Traveler | Walking figure with staff |
+| Race | Two running figures |
+| Camp | Tent / campfire |
+| Inn | House with mug |
+| Forage | Berry branch / mushroom |
+| Campfire Tale | Fire with story swirls |
+
+**Style guide:** Stroke-based, 2px line weight, #2a241e on transparent. 24×24 viewBox. Must read at 16px on the map.
 
 ---
 
