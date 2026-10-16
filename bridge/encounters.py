@@ -30,6 +30,17 @@ class EncounterEngine:
     def _load(self):
         from bridge.encounter_content import load_encounters
         self.encounters = load_encounters(self.pack_dir)
+        # Load POIs
+        import json
+        poi_path = self.pack_dir / "pois.json"
+        self.pois = []
+        if poi_path.exists():
+            try:
+                data = json.loads(poi_path.read_text(encoding="utf-8"))
+                self.pois = data.get("pois", [])
+                log.info("loaded %d POIs", len(self.pois))
+            except Exception:
+                log.exception("failed to load pois.json")
         log.info("loaded %d encounters", len(self.encounters))
 
     # --- player state helpers ---
@@ -83,7 +94,8 @@ class EncounterEngine:
 
     # --- trigger evaluation (called from MarchTracker.reading) ---
 
-    def on_reading(self, ts: str, row: dict, total_km: float):
+    def on_reading(self, ts: str, row: dict, total_km: float,
+                   journey_frac: float = 0.0):
         """Check triggers. total_km is cumulative journey distance."""
         # Morale decay (1-2hr half-life approx)
         m = self.get_morale()
@@ -94,6 +106,11 @@ class EncounterEngine:
         if self.active_id:
             self._update_challenge(row)
             return  # one at a time
+
+        # POI location triggers
+        self._check_pois(journey_frac)
+        if self.active_id:
+            return
 
         # Random encounter trigger with increasing probability
         # Types: vignette, choice, challenge
@@ -118,6 +135,51 @@ class EncounterEngine:
                 self._activate(eid)
                 self._last_trigger_km = total_km
                 break
+
+    def _check_pois(self, journey_frac: float):
+        """Trigger POI encounters when within radius."""
+        for poi in self.pois:
+            pid = f"poi_{poi['id']}"
+            if self.get_status(pid) != "locked":
+                continue
+            pfrac = poi["journey_frac"]
+            radius = poi.get("radius_frac", 0.01)
+            if abs(journey_frac - pfrac) <= radius:
+                # Create a synthetic encounter for this POI
+                self._activate_poi(poi)
+                break
+
+    def _activate_poi(self, poi: dict):
+        """Activate a POI as an encounter."""
+        pid = f"poi_{poi['id']}"
+        # Build encounter from POI data
+        ptype = poi["type"]  # history, battlefield, inn, campsite
+        title = poi["name"]
+        body = f"# {title}\n\n"
+        if ptype == "history":
+            body += f"You've reached {title}. "
+            if poi.get("wiki"):
+                body += f"\n\nRead more: {poi['wiki']}"
+        elif ptype == "battlefield":
+            body += f"This is the site of a great battle. {title} saw..."
+            if poi.get("wiki"):
+                body += f"\n\nRead more: {poi['wiki']}"
+        elif ptype == "inn":
+            body += f"You've arrived at {title}. Rest? (+morale)"
+        elif ptype == "campsite":
+            body += f"A good spot to camp: {title}."
+        # Detour info
+        detour = poi.get("detour_km", 0)
+        if detour > 0 and detour <= 10:
+            body += f"\n\n[Detour available: {detour}km off path]"
+        # Store as synthetic encounter
+        self.encounters[pid] = {
+            "id": pid,
+            "meta": {"type": "poi", "poi_type": ptype, "meeting": "green",
+                     "detour_km": detour, "wiki": poi.get("wiki", "")},
+            "body": body,
+        }
+        self._activate(pid)
 
     def _update_challenge(self, row: dict):
         """Track progress on active speed/stealth/incline challenges."""

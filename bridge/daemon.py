@@ -602,11 +602,13 @@ async def run() -> None:
                         db.commit()
                     state["row"] = row
                     tracker.reading(ts, row)
-                    # Encounter triggers (needs total journey km)
+                    # Encounter triggers (needs total journey km + fraction)
                     try:
-                        from bridge.stats import march_stats
+                        from bridge.stats import march_stats, route_position, load_route
                         _, total_m, _, _, _ = march_stats(db)
-                        engine.on_reading(ts, row, total_m / 1000.0)
+                        route = load_route()
+                        _, _, journey_frac = route_position(route, total_m)
+                        engine.on_reading(ts, row, total_m / 1000.0, journey_frac)
                     except Exception:
                         log.exception("encounter on_reading failed")
 
