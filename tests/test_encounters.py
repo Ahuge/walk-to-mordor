@@ -1,6 +1,7 @@
 """Tests for EncounterEngine: triggers, choices, challenges, POIs."""
 
 import json
+import random
 import sqlite3
 import sys
 import threading
@@ -44,6 +45,11 @@ Hello world.
 
 
 class TestEncounters(unittest.TestCase):
+    def setUp(self):
+        # Seed random so trigger probabilities are deterministic.
+        # Seed 42 gives random() = 0.639 < 0.8, triggering the vignette.
+        random.seed(42)
+
     def test_load_encounters(self):
         import tempfile
         with tempfile.TemporaryDirectory() as td:
