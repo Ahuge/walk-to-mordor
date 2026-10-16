@@ -30,10 +30,11 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+# Ensure repo root is on sys.path before importing bridge modules.
+# (When run as `python bridge/daemon.py`, only bridge/ is on the path.)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bridge.store import repo_root  # noqa: E402
-
-sys.path.insert(0, str(repo_root()))
 
 from bleak import BleakClient  # noqa: E402
 
