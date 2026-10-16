@@ -482,7 +482,18 @@ function showWidgetEncounter(enc) {
         }).then(r => r.json()).catch(() => null);
         hideWidgetEncounter();
         lastEncounterId = null;
-        if (r && r.ok && r.consequence) toast(`${r.label}: ${r.consequence}`);
+        if (r && r.ok) {
+          if (r.followup) {
+            // Show followup in widget banner
+            document.getElementById('we-title').textContent = r.label;
+            document.getElementById('we-body').textContent = r.followup.slice(0, 120) + '…';
+            document.getElementById('we-actions').innerHTML = '';
+            document.getElementById('widget-encounter').style.display = 'block';
+            lastEncounterId = 'followup_shown';
+          } else if (r.consequence) {
+            toast(`${r.label}: ${r.consequence}`);
+          }
+        }
       });
     }
   } else if (enc.meta.challenge_type) {
@@ -581,10 +592,19 @@ function showEncounter(enc) {
         hideEncounter();
         lastEncounterId = null;
         if (r && r.ok) {
-          // Show consequence as toast
-          const msg = r.consequence ?
-            `${r.label}: ${r.consequence}` : `Chose: ${r.label}`;
-          toast(msg);
+          if (r.followup) {
+            // Show branching followup dialogue
+            showEncounter({
+              id: enc.id + '_followup',
+              meta: {id: r.label},
+              body: r.followup,
+            });
+            lastEncounterId = enc.id + '_followup';
+          } else {
+            const msg = r.consequence ?
+              `${r.label}: ${r.consequence}` : `Chose: ${r.label}`;
+            toast(msg);
+          }
         }
       };
       btnRow.appendChild(b);

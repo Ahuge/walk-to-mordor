@@ -11,6 +11,10 @@ choices:
   - "help:Help him:morale+10"
   - "ignore:Walk on:morale-5"
   - "ask:Ask about the road:unlock:shire_rumor_01"
+followups:
+  help: "You spend twenty minutes gathering apples. The hobbit — his name is Milo — beams with gratitude and presses a warm apple pie into your hands. 'For the road!' Morale soars."
+  ignore: "You step around the spill and walk on. Behind you, Milo mutters something about 'tall folk and their tall hurry.' The guilt gnaws at you."
+  ask: "Milo scratches his chin. 'Road east? Aye, but mind the old forest path — travelers say they've heard strange songs on the wind.' He marks something on your map."
 ---
 
 # The Lost Cart

@@ -6,43 +6,71 @@ from pathlib import Path
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
     """Split '---\\n...\\n---\\n<body>' into (metadata dict, body).
-    Supports simple key: value pairs and key:\\n  - list items.
+    Supports:
+      key: value          (with int/float/bool coercion)
+      key:                (empty value)
+        - list item
+        - list item
+      key:
+        subkey: value     (nested dict)
+        subkey: value
     """
     m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
     if not m:
         return {}, text
     raw, body = m.groups()
+    lines = raw.split("\n")
     meta = {}
-    current_list_key = None
-    for line in raw.split("\n"):
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         stripped = line.strip()
-        if not stripped:
-            current_list_key = None
-            continue
-        # List item (indented dash)
-        if stripped.startswith("- ") and current_list_key:
-            item = stripped[2:].strip().strip('"').strip("'")
-            meta[current_list_key].append(item)
-            continue
-        if ":" not in stripped:
-            current_list_key = None
+        if not stripped or ":" not in stripped:
+            i += 1
             continue
         k, v = stripped.split(":", 1)
         k, v = k.strip(), v.strip().strip('"').strip("'")
-        if not v:
-            # Start of a list (e.g. "choices:")
-            meta[k] = []
-            current_list_key = k
+        if v:
+            # Simple key: value
+            if v.lower() in ("true", "false"):
+                v = v.lower() == "true"
+            elif re.match(r"^-?\d+$", v):
+                v = int(v)
+            elif re.match(r"^-?\d+\.\d+$", v):
+                v = float(v)
+            meta[k] = v
+            i += 1
             continue
-        current_list_key = None
-        # Simple type coercion
-        if v.lower() in ("true", "false"):
-            v = v.lower() == "true"
-        elif re.match(r"^-?\d+$", v):
-            v = int(v)
-        elif re.match(r"^-?\d+\.\d+$", v):
-            v = float(v)
-        meta[k] = v
+        # Empty value: look ahead for list (-) or dict (key:) items
+        j = i + 1
+        items = []
+        is_dict = False
+        is_list = False
+        while j < len(lines):
+            nxt = lines[j].strip()
+            if not nxt:
+                j += 1
+                continue
+            # Stop at non-indented line (new top-level key)
+            if lines[j] and not lines[j][0].isspace():
+                break
+            if nxt.startswith("- "):
+                is_list = True
+                items.append(nxt[2:].strip().strip('"').strip("'"))
+            elif ":" in nxt:
+                is_dict = True
+                sk, sv = nxt.split(":", 1)
+                items.append((sk.strip(), sv.strip().strip('"').strip("'")))
+            else:
+                break
+            j += 1
+        if is_dict:
+            meta[k] = dict(items)
+        elif is_list:
+            meta[k] = items
+        else:
+            meta[k] = ""
+        i = j
     return meta, body.strip()
 
 

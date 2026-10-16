@@ -470,5 +470,9 @@ class EncounterEngine:
                         unlock_id = tag[7:]
                         self.set_status(unlock_id, "unlocked")
                 self.complete_active({"choice": choice_id})
-                return {"label": label, "consequence": consequence}
+                # Get followup dialogue if defined
+                followups = meta.get("followups", {})
+                followup = followups.get(choice_id, "") if isinstance(followups, dict) else ""
+                return {"label": label, "consequence": consequence,
+                        "followup": followup}
         return None
