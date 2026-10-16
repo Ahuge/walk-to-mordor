@@ -297,6 +297,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
         "last_error": None,
         "last_reading_ts": None,
     }
+    # Encounter engine, set by run().
+    engine = None
 
     def log_message(self, *args):  # quiet
         pass
@@ -390,6 +392,19 @@ class _ApiHandler(BaseHTTPRequestHandler):
                     with open(log_file, encoding="utf-8", errors="replace") as f:
                         lines = f.readlines()[-n:]
                 self._send_json({"lines": [l.rstrip("\n") for l in lines]})
+            elif path == "/api/encounters/active":
+                eng = type(self).engine
+                self._send_json({"encounter": eng.get_active() if eng else None})
+            elif path == "/api/player/state":
+                eng = type(self).engine
+                if eng:
+                    self._send_json({
+                        "morale": eng.get_morale(),
+                        "supplies": eng.get_player("supplies", "0"),
+                        "companion": eng.get_player("companion_id", ""),
+                    })
+                else:
+                    self._send_json({"error": "engine not ready"}, 503)
             elif path == "/advanced":
                 return self._serve_repo_file("ui/advanced.html",
                                              "text/html; charset=utf-8")
@@ -422,6 +437,16 @@ class _ApiHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             path = urlparse(self.path).path
+            if path == "/api/encounters/dismiss":
+                eng = type(self).engine
+                if eng:
+                    eng.dismiss_active()
+                return self._send_json({"ok": True})
+            if path == "/api/encounters/complete":
+                eng = type(self).engine
+                if eng:
+                    eng.complete_active()
+                return self._send_json({"ok": True})
             if path != "/api/commands":
                 return self._send_json({"error": "not found"}, 404)
             length = int(self.headers.get("Content-Length", 0) or 0)
@@ -483,8 +508,11 @@ async def run() -> None:
     # written; re-queue it so it isn't lost.
     db.execute("UPDATE commands SET status='pending' WHERE status='running'")
     db.commit()
+    from bridge.encounters import EncounterEngine
+    engine = EncounterEngine(db, lock, repo_root() / "packs" / "lotr")
     _ApiHandler.db = db
     _ApiHandler.lock = lock
+    _ApiHandler.engine = engine
     log.info("daemon started, db=%s", ddir / "walks.db")
 
     api_thread = threading.Thread(target=_serve_api_forever, daemon=True,
@@ -541,6 +569,13 @@ async def run() -> None:
                         db.commit()
                     state["row"] = row
                     tracker.reading(ts, row)
+                    # Encounter triggers (needs total journey km)
+                    try:
+                        from bridge.stats import march_stats
+                        _, total_m, _, _, _ = march_stats(db)
+                        engine.on_reading(ts, row, total_m / 1000.0)
+                    except Exception:
+                        log.exception("encounter on_reading failed")
 
                 await client.start_notify(TREADMILL_DATA_UUID, on_notify)
                 worker = asyncio.create_task(

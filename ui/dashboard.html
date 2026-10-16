@@ -165,6 +165,14 @@
 </main>
 <footer>Map: Yohann Bethoule / middleearthmap.app (base map by lotrproject.com) — used with permission.</footer>
 <div id="toast"></div>
+<div id="encounter-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#26231e;border:1px solid #d4af37;border-radius:12px;padding:24px;max-width:500px;z-index:2000;box-shadow:0 8px 32px rgba(0,0,0,.6)">
+  <h3 id="enc-title" style="margin:0 0 12px;color:#d4af37"></h3>
+  <div id="enc-body" style="font-size:14px;line-height:1.6;white-space:pre-wrap"></div>
+  <div style="margin-top:16px;text-align:right">
+    <button id="enc-dismiss" style="background:#4a4234;color:#f3e9d2;border:none;border-radius:6px;padding:8px 16px;cursor:pointer">Continue</button>
+  </div>
+</div>
+<div id="enc-backdrop" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1999"></div>
 
 <script src="/leaflet.js"></script>
 <script>
@@ -415,7 +423,52 @@ async function tick() {
     delete tg.dataset.armed;
     tg.style.background = '';
   }
+  // Check for active encounter (not in widget mode).
+  if (!document.body.classList.contains('widget')) {
+    checkEncounter();
+  }
 }
+
+let lastEncounterId = null;
+async function checkEncounter() {
+  const d = await fetch('/api/encounters/active').then(r => r.json()).catch(() => null);
+  const enc = d && d.encounter;
+  if (enc && enc.id !== lastEncounterId) {
+    lastEncounterId = enc.id;
+    showEncounter(enc);
+  } else if (!enc) {
+    lastEncounterId = null;
+    hideEncounter();
+  }
+}
+function showEncounter(enc) {
+  // Simple markdown: # title, paragraphs.
+  const lines = enc.body.split('\n');
+  let title = enc.meta.id || 'Encounter';
+  let body = enc.body;
+  if (lines[0].startsWith('# ')) {
+    title = lines[0].slice(2);
+    body = lines.slice(1).join('\n').trim();
+  }
+  document.getElementById('enc-title').textContent = title;
+  document.getElementById('enc-body').textContent = body;
+  document.getElementById('encounter-modal').style.display = 'block';
+  document.getElementById('enc-backdrop').style.display = 'block';
+}
+function hideEncounter() {
+  document.getElementById('encounter-modal').style.display = 'none';
+  document.getElementById('enc-backdrop').style.display = 'none';
+}
+document.getElementById('enc-dismiss').onclick = async () => {
+  await fetch('/api/encounters/complete', {method: 'POST'}).catch(() => {});
+  hideEncounter();
+  lastEncounterId = null;
+};
+document.getElementById('enc-backdrop').onclick = async () => {
+  await fetch('/api/encounters/dismiss', {method: 'POST'}).catch(() => {});
+  hideEncounter();
+  lastEncounterId = null;
+};
 
 async function loadMarches() {
   const data = await fetch('/api/marches?limit=500').then(r => r.json()).catch(() => null);
