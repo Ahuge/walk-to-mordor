@@ -165,6 +165,11 @@
 </main>
 <footer>Map: Yohann Bethoule / middleearthmap.app (base map by lotrproject.com) — used with permission.</footer>
 <div id="toast"></div>
+<div id="widget-encounter" style="display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(38,35,30,.95);border:1px solid #d4af37;border-radius:8px;padding:8px 12px;z-index:1500;max-width:90%;font-size:12px">
+  <div id="we-title" style="font-weight:bold;color:#d4af37;margin-bottom:4px"></div>
+  <div id="we-body" style="max-height:60px;overflow:hidden;text-overflow:ellipsis"></div>
+  <div id="we-actions" style="margin-top:6px"></div>
+</div>
 <div id="encounter-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#26231e;border:1px solid #d4af37;border-radius:12px;padding:24px;max-width:500px;z-index:2000;box-shadow:0 8px 32px rgba(0,0,0,.6)">
   <h3 id="enc-title" style="margin:0 0 12px;color:#d4af37"></h3>
   <div id="enc-body" style="font-size:14px;line-height:1.6;white-space:pre-wrap"></div>
@@ -424,26 +429,85 @@ async function tick() {
     delete tg.dataset.armed;
     tg.style.background = '';
   }
-  // Check for active encounter (not in widget mode).
-  if (!document.body.classList.contains('widget')) {
-    checkEncounter();
-  }
+  // Check for active encounter.
+  checkEncounter();
 }
 
 let lastEncounterId = null;
+const isWidget = () => document.body.classList.contains('widget');
 async function checkEncounter() {
   const d = await fetch('/api/encounters/active').then(r => r.json()).catch(() => null);
   const enc = d && d.encounter;
   if (enc && enc.id !== lastEncounterId) {
     lastEncounterId = enc.id;
-    showEncounter(enc);
+    if (isWidget()) showWidgetEncounter(enc);
+    else showEncounter(enc);
   } else if (enc && enc.id === lastEncounterId) {
-    // Update progress bar for active challenge
-    updateChallengeProgress(enc);
+    if (isWidget()) updateWidgetProgress(enc);
+    else updateChallengeProgress(enc);
   } else if (!enc) {
     lastEncounterId = null;
     hideEncounter();
+    hideWidgetEncounter();
   }
+}
+function showWidgetEncounter(enc) {
+  const lines = enc.body.split('\n');
+  let title = enc.meta.id || 'Encounter';
+  let body = enc.body;
+  if (lines[0].startsWith('# ')) {
+    title = lines[0].slice(2);
+    body = lines.slice(1).join('\n').trim().slice(0, 120) + '…';
+  }
+  document.getElementById('we-title').textContent = title;
+  document.getElementById('we-body').textContent = body;
+  const actions = document.getElementById('we-actions');
+  actions.innerHTML = '';
+  const mkBtn = (label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'background:#4a4234;color:#f3e9d2;border:none;border-radius:4px;padding:4px 10px;margin:2px;font-size:11px;cursor:pointer';
+    b.onclick = fn;
+    actions.appendChild(b);
+  };
+  const choices = enc.meta.choices || [];
+  if (choices.length) {
+    for (const c of choices.slice(0, 3)) {
+      const parts = c.split(':');
+      const cid = parts[0].trim(), label = (parts[1] || cid).trim();
+      mkBtn(label, async () => {
+        await fetch('/api/encounters/respond', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({choice_id: cid}),
+        }).catch(() => {});
+        hideWidgetEncounter();
+        lastEncounterId = null;
+      });
+    }
+  } else if (enc.meta.challenge_type) {
+    mkBtn('Defer', async () => {
+      await fetch('/api/encounters/defer', {method: 'POST'}).catch(() => {});
+      hideWidgetEncounter();
+      lastEncounterId = null;
+    });
+  }
+  mkBtn('Open →', () => window.pywebview.api.open_browser());
+  document.getElementById('widget-encounter').style.display = 'block';
+}
+function updateWidgetProgress(enc) {
+  // Widget shows minimal progress via title update
+  const prog = enc.progress || {};
+  const title = document.getElementById('we-title');
+  if (!title || !enc.meta.challenge_type) return;
+  const ctype = enc.meta.challenge_type;
+  if (ctype === 'speed' || ctype === 'stealth') {
+    const covered = Math.round(prog.covered_m || 0);
+    const target = Math.round(parseFloat(enc.meta.target_m || 400));
+    title.textContent = `${enc.meta.id} — ${covered}/${target}m`;
+  }
+}
+function hideWidgetEncounter() {
+  document.getElementById('widget-encounter').style.display = 'none';
 }
 function updateChallengeProgress(enc) {
   const bar = document.getElementById('enc-progress');
