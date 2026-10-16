@@ -2,193 +2,124 @@
 
 Turn an under-desk walking pad into a journey across Middle-earth.
 
-**Phase 0 (this repo, right now):** prove the UREVO SpaceWalk pad speaks
-standard Bluetooth FTMS and stream live workout data into Python —
-1 reading per second: speed, distance, incline, calories, time, steps.
+Walk in real life, travel in Middle-earth. A background daemon connects to your walking pad over Bluetooth, logs every step to a local database, and serves a live dashboard with your party token moving across the actual Middle-earth map.
 
-**Later phases:** the game itself — see [docs/game-design.md](docs/game-design.md).
+![Full dashboard](docs/img/dashboard.png)
 
-## Quick start
+## What it does
 
-```bash
-pip install -r requirements.txt
+- **Live map**: Your position on the road from Bag End to Mount Doom, with fog-of-war lifting as you walk
+- **Floating widget**: Always-on-top mini map with belt controls (Start/Stop/speed)
+- **Belt controls**: Start, stop, and adjust speed from the dashboard, widget, or CLI
+- **March tracking**: Every walk is logged with distance, duration, steps, calories, avg speed
+- **Daily nudge**: Windows notification if you haven't walked yet today
+- **Full installer**: One-click Inno Setup installer with auto-start on login
 
-# 1. Power-cycle the treadmill (it advertises BLE only briefly after power-on).
-#    Keep the UREVO phone app closed / phone Bluetooth off — the pad takes
-#    one BLE connection at a time.
+### Widget
 
-# 2. Find the pad and dump what it exposes:
-python treadmill/probe.py
+![Widget closeup](docs/img/widget-closeup.png)
 
-# 3. Stream live data (also logs to CSV with --csv):
-python treadmill/reader.py --csv walks.csv
-```
+The floating widget stays on top while you work. Drag it by the hand control, resize from the corner, and control the belt without switching windows.
 
-The reader is **read-only**: it never sends belt control commands.
+![Widget with markers](docs/img/widget-map.png)
 
-## Daemon (Phase 1) — always-on background bridge
+Toggleable Encounters and Deaths overlays mark points of interest along the route. Click any marker for details.
 
-`bridge/daemon.py` watches for the pad, auto-connects when you power it on,
-and logs everything to SQLite — 1/sec readings plus per-march summaries
-(start/end, distance, calories, steps, avg speed, max incline). Storage:
+![Widget popup](docs/img/widget-popup.png)
 
-- Windows: `%LOCALAPPDATA%\walk-to-mordor\walks.db` (log: `daemon.log` alongside)
-- Other: `~/.walk-to-mordor/`
+## Quick start (Windows)
 
-A march starts when the belt moves and ends after 60 s of no motion (or on
-disconnect). The `meta` table is reserved for future state (e.g. nudge bookkeeping).
+**Option 1: Installer** (recommended)
+
+Download `WalkToMordorSetup-*.exe` from [Releases](https://github.com/Ahuge/walk-to-mordor/releases) and run it. It installs the daemon, widget, and daily nudge, all auto-starting at login.
+
+**Option 2: From source**
 
 ```powershell
-# 1. Run in the foreground first to verify it works:
+pip install bleak pywebview pyinstaller
+
+# Install the daemon + widget as logon tasks:
+python tools/install_windows.py --widget --nudge
+
+# Or run the daemon in the foreground to test:
 python bridge/daemon.py
-
-# 2. Install as a logon task (pythonw, no console window):
-python tools/install_windows.py
-
-# 3. Start it now without logging off:
-schtasks /run /tn "WalkToMordor"
-
-# Remove it:
-python tools/install_windows.py --uninstall
 ```
 
-March summaries are the source for everything next: the nudge ("active on
-PC, no march today") and the minimap overlay both read `walks.db`.
+Then open http://127.0.0.1:8471/ in your browser, or launch the widget:
+```powershell
+python tools/build_widget_exe.py  # builds dist/WalkToMordorWidget.exe
+```
+
+**Bluetooth note:** Power-cycle the pad (it advertises BLE only briefly after power-on). Keep the UREVO phone app closed — the pad takes one BLE connection at a time.
+
+## How it works
+
+```
+Walking pad --BLE FTMS--> Daemon --SQLite--> walks.db
+                              |
+                         HTTP API :8471
+                          /       \
+                    Dashboard   Widget (pywebview)
+```
+
+- **Daemon** (`bridge/daemon.py`): Auto-connects to the pad via Bluetooth FTMS, logs 1/sec readings (speed, distance, incline, calories, steps) to SQLite, serves the HTTP API and dashboard.
+- **Marches**: A march starts when the belt moves, ends after 60s idle or on disconnect. Saved to the `marches` table with full stats.
+- **API** (`127.0.0.1:8471`): `GET /api/stats`, `POST /api/commands` (start/stop/speed/incline), `GET /api/route`, `GET /api/marches`, `GET /api/log`.
+- **Dashboard** (`ui/dashboard.html`): Leaflet map with the journey route, live token, fog-of-war, leg progress, belt controls, march log, steps graph, and an Advanced page (`/advanced`) with BLE diagnostics.
+- **Widget** (`ui/widget.py`): Borderless always-on-top pywebview window showing the map in compact mode.
 
 ## Belt controls
 
-The daemon owns the pad's single Bluetooth connection, so all belt
-commands go through it via a `commands` table in the DB:
+From the dashboard, widget, or CLI:
 
 ```powershell
 python treadmill/control.py start          # 3-2-1 countdown, then belt starts
 python treadmill/control.py stop           # stop the belt
 python treadmill/control.py speed 4.0      # set target speed (km/h)
 python treadmill/control.py incline 3      # set target incline (%)
-python treadmill/control.py status         # show recent commands + results
 ```
 
-The CLI queues the command and waits for the daemon to execute it
-(`--no-wait` to skip waiting). Commands older than 10 minutes are ignored
-as stale. Speed/incline are clamped to the pad's reported supported range.
-
-**Safety:**
-- The CLI counts down 3-2-1 before `start` — make sure the belt area is
-  clear (kids, pets) and the safety key is in before you confirm.
-- `stop` always works and clears any queued targets.
-- Targets are verified against the live 1/sec readings and retried if the
-  belt doesn't reach them; a stopped belt queues targets for the next start
-  instead of sending them (the pad ignores them otherwise).
-
-## Localhost API
-
-The daemon also serves a tiny HTTP API on `127.0.0.1:8471` (stdlib only,
-no extra dependencies):
-
-- `GET /api/stats` — live snapshot (leg, progress, today/total, streak,
-  belt status) as JSON
-- `POST /api/commands` — `{"op": "start"|"stop"|"set_speed"|"set_incline",
-  "args": {...}}` → `{"id": …}` (202)
-- `GET /api/commands/<id>` — command status + result
-
-The CLI and stats tools prefer the API and fall back to direct DB access
-when the daemon isn't running. The API path is what makes WSL-side tools
-reliable: SQLite over WSL's 9P mount is flaky, HTTP is not. The future
-web dashboard (real map) will be served from this same API.
-
-## Dashboard (real map)
-
-The daemon serves the journey dashboard at <http://127.0.0.1:8471/> —
-open it in any browser on the machine:
-
-- The actual Middle-earth map (pan/zoom, Leaflet), with our journey's road
-  drawn over it, your party token moving live, and fog-of-war lifting as
-  you walk.
-- Live stats (leg/progress, today/total, streak, belt status).
-- Belt controls (Start/Stop/speed) and the recent march log.
-
-The page polls the API every 2 s; Leaflet is vendored, no CDN needed.
-
-## Recovering missed walks
-
-The pad only streams the *current* session over BLE — it keeps no
-history. `walks.db` is the historian: 1/sec readings plus march summaries.
-If the daemon was killed mid-walk (crash, task restart), the readings are
-there but no march row was written. Rebuild them (PowerShell):
-
-```powershell
-python bridge/rebuild.py            # dry run: show what would be added
-python bridge/rebuild.py --apply    # actually insert the marches
-```
-
-Segments already covered by a march are skipped, so it never double
-counts. Distances accumulate positive odometer deltas, so a pad session
-reset mid-walk doesn't zero the segment.
-
-Map credit: Yohann Bethoule / middleearthmap.app (base map by
-lotrproject.com) — used with the author's explicit permission for our own
-use. Assets vendored under `packs/lotr/art/` (map.webp, markers.json,
-paths.json, journey.json).
-
-## Live stats & minimap
-
-`bridge/stats.py` reads `walks.db` — one snapshot, or a live terminal view:
-
-```bash
-python bridge/stats.py            # snapshot: leg, progress, today/total, streak
-python bridge/stats.py --watch    # refresh every 2 s (Ctrl-C to stop)
-```
-
-`ui/minimap.py` is the same stats in a tiny always-on-top window
-(tkinter, no extra dependencies), with Start / Stop / − / + belt buttons
-that queue commands for the daemon. Close the window to hide it.
-
-```powershell
-python ui/minimap.py      # console window (testing)
-pythonw ui/minimap.py     # no console
-# auto-start it at logon alongside the daemon:
-python tools/install_windows.py --minimap
-```
-
-## Troubleshooting
-
-**`BleakDBusError: org.bluez was not provided` (WSL):** you're running inside
-Windows Subsystem for Linux, which can't see the Bluetooth adapter. Run the
-scripts in *native Windows Python* instead — the repo lives on a Windows
-drive, so open PowerShell, `cd` into it, `pip install bleak`,
-`python treadmill/probe.py`. No code changes needed; bleak picks the right
-Bluetooth backend per OS.
-
-## How it works
-
-UREVO SpaceWalk pads expose the standard Bluetooth
-[Fitness Machine Service](https://www.bluetooth.com/specifications/specs/fitness-machine-service-1-0/)
-(`0x1826`). The `Treadmill Data` characteristic (`0x2ACD`) notifies once per
-second with a 26-byte packet: flags, speed, distance, incline, calories,
-heart rate, elapsed time — plus a UREVO-specific step counter tucked into
-flag bit 13. Full byte map in [docs/protocol.md](docs/protocol.md),
-reverse-engineered from a community GATT dump of the SpaceWalk 3S
-([ncr/omarchy-spacewalk](https://github.com/ncr/omarchy-spacewalk)).
+**Safety:** The CLI counts down 3-2-1 before `start`. `stop` always works and clears queued targets. Speed/incline clamp to the pad's reported range.
 
 ## Project layout
 
 ```
+bridge/
+  daemon.py      background BLE bridge + HTTP API + march tracker
+  store.py       SQLite storage (shared DB path)
+  stats.py       live stats snapshot / --watch
+  rebuild.py     recover march summaries from raw readings
 treadmill/
-  probe.py    scan for the pad, dump its BLE services (verify a new model)
-  reader.py   live 1/sec FTMS stream -> console (+ optional CSV log)
-docs/
-  protocol.md    FTMS byte map, quirks, 5L expectations
-  game-design.md the full game design (engine + content packs)
+  probe.py       scan for the pad, dump BLE services
+  reader.py      live 1/sec FTMS stream (read-only)
+  control.py     belt control CLI (via daemon API)
+ui/
+  dashboard.html full dashboard (map, controls, stats)
+  advanced.html  BLE diagnostics + log viewer
+  widget.py      floating always-on-top widget
+  minimap.py     legacy tkinter minimap
+tools/
+  install_windows.py   logon tasks (daemon/widget/nudge)
+  build_widget_exe.py  PyInstaller for the widget
+  build_daemon_exe.py  PyInstaller for the daemon
+  build_installer.py   full Inno Setup build
+  nudge.py             daily walk reminder
+installer/
+  walk-to-mordor.iss   Inno Setup script
 packs/
-  README.md      content-pack spec (route/encounters/art format)
-  lotr/          Pack 1: Walk to Mordor (route.json drafted)
+  lotr/          Pack 1: Walk to Mordor (route, encounters, art)
+docs/
+  protocol.md    FTMS byte map
+  game-design.md full game design (engine + content packs)
 ```
 
-## Notes
+## Map credit
 
-- Tested against the protocol dump for the SpaceWalk 3S; the 5L is expected
-  to match (same product line, same app, same 0–9% incline range) — run
-  `probe.py` against your pad to confirm.
-- Your Python machine needs Bluetooth within ~10 m of the desk.
-- Alternative library: [pyftms](https://pypi.org/project/pyftms/) (also
-  bleak-based) if you prefer a packaged FTMS client.
+Map: Yohann Bethoule / [middleearthmap.app](https://middleearthmap.app/) (base map by lotrproject.com) — used with the author's explicit permission. Assets vendored under `packs/lotr/art/`.
+
+## Technical notes
+
+- UREVO SpaceWalk pads expose standard Bluetooth [FTMS](https://www.bluetooth.com/specifications/specs/fitness-machine-service-1-0/) (`0x1826`). Byte map in `docs/protocol.md`.
+- Storage: `%LOCALAPPDATA%\walk-to-mordor\walks.db` (log: `daemon.log` alongside).
+- The pad streams only the current session over BLE — `walks.db` is the historian.
+- API binds `0.0.0.0:8471`; keep it firewalled to your LAN.
