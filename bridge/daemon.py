@@ -442,11 +442,27 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 if eng:
                     eng.dismiss_active()
                 return self._send_json({"ok": True})
+            if path == "/api/encounters/defer":
+                eng = type(self).engine
+                if eng:
+                    eng.defer_active()
+                return self._send_json({"ok": True})
             if path == "/api/encounters/complete":
                 eng = type(self).engine
                 if eng:
                     eng.complete_active()
                 return self._send_json({"ok": True})
+            if path == "/api/encounters/respond":
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b"{}")
+                except Exception:
+                    return self._send_json({"error": "bad json"}, 400)
+                eng = type(self).engine
+                result = eng.respond_to_active(data.get("choice_id", "")) if eng else None
+                if result:
+                    return self._send_json({"ok": True, **result})
+                return self._send_json({"error": "invalid choice"}, 400)
             if path != "/api/commands":
                 return self._send_json({"error": "not found"}, 404)
             length = int(self.headers.get("Content-Length", 0) or 0)

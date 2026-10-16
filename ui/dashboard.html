@@ -168,6 +168,7 @@
 <div id="encounter-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#26231e;border:1px solid #d4af37;border-radius:12px;padding:24px;max-width:500px;z-index:2000;box-shadow:0 8px 32px rgba(0,0,0,.6)">
   <h3 id="enc-title" style="margin:0 0 12px;color:#d4af37"></h3>
   <div id="enc-body" style="font-size:14px;line-height:1.6;white-space:pre-wrap"></div>
+  <div id="enc-choices" style="margin-top:12px"></div>
   <div style="margin-top:16px;text-align:right">
     <button id="enc-dismiss" style="background:#4a4234;color:#f3e9d2;border:none;border-radius:6px;padding:8px 16px;cursor:pointer">Continue</button>
   </div>
@@ -436,13 +437,33 @@ async function checkEncounter() {
   if (enc && enc.id !== lastEncounterId) {
     lastEncounterId = enc.id;
     showEncounter(enc);
+  } else if (enc && enc.id === lastEncounterId) {
+    // Update progress bar for active challenge
+    updateChallengeProgress(enc);
   } else if (!enc) {
     lastEncounterId = null;
     hideEncounter();
   }
 }
+function updateChallengeProgress(enc) {
+  const bar = document.getElementById('enc-progress');
+  const txt = document.getElementById('enc-progress-text');
+  if (!bar || !enc.meta.challenge_type) return;
+  const prog = enc.progress || {};
+  const ctype = enc.meta.challenge_type;
+  let covered = 0, target = 1;
+  if (ctype === 'speed' || ctype === 'stealth') {
+    covered = prog.covered_m || 0;
+    target = parseFloat(enc.meta.target_m || 400);
+    txt.textContent = `${Math.round(covered)} / ${target}m`;
+  } else if (ctype === 'incline') {
+    covered = prog.held_s || 0;
+    target = parseFloat(enc.meta.target_s || 180);
+    txt.textContent = `${Math.round(covered)} / ${target}s`;
+  }
+  bar.style.width = `${Math.min(100, covered / target * 100)}%`;
+}
 function showEncounter(enc) {
-  // Simple markdown: # title, paragraphs.
   const lines = enc.body.split('\n');
   let title = enc.meta.id || 'Encounter';
   let body = enc.body;
@@ -452,6 +473,66 @@ function showEncounter(enc) {
   }
   document.getElementById('enc-title').textContent = title;
   document.getElementById('enc-body').textContent = body;
+  const btnRow = document.getElementById('enc-choices');
+  btnRow.innerHTML = '';
+  const dismissBtn = document.getElementById('enc-dismiss');
+  const meta = enc.meta;
+
+  // Challenge progress bar
+  let progressHtml = '';
+  if (meta.challenge_type) {
+    const ctype = meta.challenge_type;
+    let target = 0, unit = '';
+    if (ctype === 'speed' || ctype === 'stealth') {
+      target = parseFloat(meta.target_m || 400); unit = 'm';
+    } else if (ctype === 'incline') {
+      target = parseFloat(meta.target_s || 180); unit = 's';
+    }
+    progressHtml = `<div style="margin:12px 0">
+      <div style="background:#14120f;border-radius:4px;height:8px;overflow:hidden">
+        <div id="enc-progress" style="background:#d4af37;height:100%;width:0%"></div>
+      </div>
+      <div id="enc-progress-text" style="font-size:12px;color:#9a8c6d;margin-top:4px">0 / ${target}${unit}</div>
+    </div>`;
+  }
+  document.getElementById('enc-body').innerHTML =
+    document.getElementById('enc-body').textContent + progressHtml;
+
+  // Choice buttons
+  const choices = meta.choices || [];
+  if (choices.length) {
+    dismissBtn.style.display = 'none';
+    for (const c of choices) {
+      const parts = c.split(':');
+      const cid = parts[0].trim(), label = (parts[1] || cid).trim();
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = 'background:#4a4234;color:#f3e9d2;border:none;border-radius:6px;padding:8px 16px;margin:4px;cursor:pointer';
+      b.onclick = async () => {
+        await fetch('/api/encounters/respond', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({choice_id: cid}),
+        }).catch(() => {});
+        hideEncounter();
+        lastEncounterId = null;
+      };
+      btnRow.appendChild(b);
+    }
+  } else if (meta.challenge_type) {
+    // Challenge: show Defer button (for meetings)
+    dismissBtn.style.display = 'none';
+    const deferBtn = document.createElement('button');
+    deferBtn.textContent = 'Defer (in a meeting)';
+    deferBtn.style.cssText = 'background:#4a4234;color:#f3e9d2;border:none;border-radius:6px;padding:8px 16px;margin:4px;cursor:pointer';
+    deferBtn.onclick = async () => {
+      await fetch('/api/encounters/defer', {method: 'POST'}).catch(() => {});
+      hideEncounter();
+      lastEncounterId = null;
+    };
+    btnRow.appendChild(deferBtn);
+  } else {
+    dismissBtn.style.display = '';
+  }
   document.getElementById('encounter-modal').style.display = 'block';
   document.getElementById('enc-backdrop').style.display = 'block';
 }
