@@ -402,7 +402,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
             elif path == "/api/encounters/pending":
                 eng = type(self).engine
                 unlock_id = eng.check_pending_unlock() if eng else None
-                self._send_json({"unlock_id": unlock_id})
+                dialogue = eng.check_pending_dialogue() if eng else None
+                self._send_json({"unlock_id": unlock_id, "dialogue": dialogue})
             elif path == "/api/pois":
                 eng = type(self).engine
                 pois = eng.pois if eng and hasattr(eng, "pois") else []
@@ -416,9 +417,22 @@ class _ApiHandler(BaseHTTPRequestHandler):
                         "fatigue_m": eng.get_fatigue_m(),
                         "companion": eng.get_companion(),
                         "tales": eng.get_player("tales_unlocked", ""),
+                        "meeting_mode": eng.get_player("meeting_mode", "off"),
                     })
                 else:
                     self._send_json({"error": "engine not ready"}, 503)
+            if path == "/api/player/meeting":
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b"{}")
+                except Exception:
+                    return self._send_json({"error": "bad json"}, 400)
+                eng = type(self).engine
+                if eng:
+                    mode = "on" if data.get("enabled") else "off"
+                    eng.set_player("meeting_mode", mode)
+                    log.info("meeting mode: %s", mode)
+                return self._send_json({"ok": True})
             elif path == "/advanced":
                 return self._serve_repo_file("ui/advanced.html",
                                              "text/html; charset=utf-8")

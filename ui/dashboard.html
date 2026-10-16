@@ -147,6 +147,9 @@
         <button id="btn-slower">−<span class="wide-only"> speed</span></button>
         <button id="btn-faster">+<span class="wide-only"> speed</span></button>
       </div>
+      <div class="btnrow" style="margin-top:6px">
+        <button id="btn-meeting" title="Meeting mode: skips intense encounters">🤫 Meeting: Off</button>
+      </div>
     </div>
     <div class="card" id="march-card">
       <h2>March log</h2>
@@ -476,6 +479,8 @@ async function tick() {
   }
   // Check for active encounter.
   checkEncounter();
+  // Check for pending dialogue/unlocks every 10s
+  setInterval(checkPendingUnlock, 10000);
 }
 
 let lastEncounterId = null;
@@ -696,7 +701,11 @@ function hideEncounter() {
 }
 async function checkPendingUnlock() {
   const d = await fetch('/api/encounters/pending').then(r => r.json()).catch(() => null);
-  if (d && d.unlock_id) {
+  if (!d) return;
+  if (d.dialogue) {
+    toast(`💬 ${d.dialogue.companion}: "${d.dialogue.line}"`);
+  }
+  if (d.unlock_id) {
     // Trigger the unlocked encounter
     await fetch('/api/encounters/trigger', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -836,6 +845,22 @@ document.getElementById('btn-toggle').onclick = () => {
   if (lastWalking) { cmd('stop'); return; }
   inlineConfirm(tg, 'Sure?', () => cmd('start'));
 };
+document.getElementById('btn-meeting').onclick = async () => {
+  const btn = document.getElementById('btn-meeting');
+  const isOn = btn.textContent.includes('On');
+  await fetch('/api/player/meeting', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled: !isOn}),
+  }).catch(() => {});
+  btn.textContent = isOn ? '🤫 Meeting: Off' : '🤫 Meeting: On';
+  toast(isOn ? 'Meeting mode off' : 'Meeting mode on — intense encounters paused');
+};
+// Sync meeting mode on load
+fetch('/api/player/state').then(r => r.json()).then(s => {
+  if (s && s.meeting_mode === 'on') {
+    document.getElementById('btn-meeting').textContent = '🤫 Meeting: On';
+  }
+}).catch(() => {});
 
 init();
 </script>

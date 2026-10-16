@@ -260,7 +260,7 @@ class EncounterEngine:
         return self.get_player("companion_id", "")
 
     def _update_companion(self, row: dict):
-        """Track companion distance, trigger dialogue every 0.5-1km."""
+        """Track companion distance, trigger dialogue every 0.75km."""
         cid = self.get_companion()
         if not cid:
             return
@@ -278,8 +278,35 @@ class EncounterEngine:
             last_dlg = float(self.get_player(f"companion_{cid}_last_dlg", "0"))
             if cur - last_dlg >= 0.75:
                 self.set_player(f"companion_{cid}_last_dlg", str(cur))
-                # Queue dialogue as a toast encounter (simplified)
-                log.info("companion %s dialogue at %.2fkm", cid, cur)
+                # Get next dialogue line (round-robin)
+                enc = self.encounters.get(f"npc_{cid}")
+                if enc:
+                    import re
+                    # Parse dialogue lines from body
+                    dlg_match = re.search(r"## Dialogue\n(.*?)(?=\n## |\Z)",
+                                          enc["body"], re.DOTALL)
+                    if dlg_match:
+                        lines = [l.strip()[2:].strip().strip('"')
+                                 for l in dlg_match.group(1).strip().split("\n")
+                                 if l.strip().startswith("- ")]
+                        if lines:
+                            idx = int(self.get_player(f"companion_{cid}_dlg_idx", "0"))
+                            line = lines[idx % len(lines)]
+                            self.set_player(f"companion_{cid}_dlg_idx", str(idx + 1))
+                            # Queue as pending dialogue for UI
+                            self._pending_dialogue = {
+                                "companion": enc["meta"].get("name", cid),
+                                "line": line,
+                            }
+                            log.info("companion %s: %s", cid, line[:50])
+
+    def check_pending_dialogue(self) -> dict | None:
+        """Returns pending companion dialogue, or None. Clears it."""
+        dlg = getattr(self, "_pending_dialogue", None)
+        if dlg:
+            self._pending_dialogue = None
+            return dlg
+        return None
 
     def _activate_poi(self, poi: dict):
         """Activate a POI as an encounter."""
