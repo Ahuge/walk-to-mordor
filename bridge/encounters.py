@@ -159,19 +159,23 @@ class EncounterEngine:
 
     # --- hazards ---
 
+    def _load_hazards(self):
+        import json
+        hpath = self.pack_dir / "hazards.json"
+        self.hazards = []
+        if hpath.exists():
+            try:
+                data = json.loads(hpath.read_text(encoding="utf-8"))
+                self.hazards = data.get("hazards", [])
+                log.info("loaded %d hazards", len(self.hazards))
+            except Exception:
+                log.exception("failed to load hazards.json")
+
     def get_active_hazard(self, journey_frac: float) -> dict | None:
-        """Check if journey_frac is in a hazard zone.
-        Hazard zones defined in pack hazards.json or route metadata.
-        For now: hardcoded ranges (Phase D stub, config-driven later).
-        """
-        # Example: mountains at 0.3-0.4, mire at 0.6-0.65
-        hazards = [
-            {"type": "mountain", "start": 0.30, "end": 0.38,
-             "amplitude": 3.0, "wavelength_m": 500},
-            {"type": "mire", "start": 0.60, "end": 0.65,
-             "cap_kmh": 1.5},
-        ]
-        for h in hazards:
+        """Check if journey_frac is in a hazard zone (from hazards.json)."""
+        if not hasattr(self, "hazards"):
+            self._load_hazards()
+        for h in self.hazards:
             if h["start"] <= journey_frac <= h["end"]:
                 return h
         return None

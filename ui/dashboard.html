@@ -322,7 +322,7 @@ const OVERLAY_ICONS = { encounter: '/icons/eye.svg', battle: '/icons/swords.svg'
 // Event overlays from the Middle-earth map data (toggleable layers).
 async function addOverlays() {
   const markers = await fetch('/markers.json').then(r => r.json()).catch(() => []);
-  const groups = { 'Encounters': L.layerGroup(), 'Deaths': L.layerGroup() };
+  const groups = { 'Encounters': L.layerGroup(), 'Deaths': L.layerGroup(), 'POIs': L.layerGroup() };
   for (const m of markers) {
     const ev = (m.tags && m.tags.events) || [];
     let g = null, kind = null;
@@ -337,6 +337,29 @@ async function addOverlays() {
     const link = m.infoLink ? `<br><a href="${m.infoLink}" target="_blank" rel="noopener">Learn more</a>` : '';
     marker.bindPopup(`<b>${m.title}</b><br>${m.description || ''}${link}`);
     groups[g].addLayer(marker);
+  }
+  // POIs from the encounter pack (custom SVG icons by type)
+  const poiData = await fetch('/api/pois').then(r => r.json()).catch(() => null);
+  if (poiData && poiData.pois) {
+    const iconMap = {
+      history: '/icons/poi.svg',
+      battlefield: '/icons/challenge.svg',
+      inn: '/icons/vignette.svg',
+      campsite: '/icons/choice.svg',
+    };
+    for (const p of poiData.pois) {
+      const pos = pointAt(p.journey_frac * totalPx);
+      const marker = L.marker(pos, {
+        icon: L.icon({ iconUrl: iconMap[p.type] || iconMap.history,
+                       iconSize: [24, 24], iconAnchor: [12, 24],
+                       popupAnchor: [0, -20] }),
+        title: p.name,
+      });
+      const wiki = p.wiki ? `<br><a href="${p.wiki}" target="_blank" rel="noopener">Learn more</a>` : '';
+      const detour = p.detour_km ? `<br><i>Detour: ${p.detour_km}km</i>` : '';
+      marker.bindPopup(`<b>${p.name}</b><br><i>${p.type}</i>${detour}${wiki}`);
+      groups['POIs'].addLayer(marker);
+    }
   }
   for (const [name, g] of Object.entries(groups)) g.addTo(map);
   L.control.layers(null, groups, { collapsed: false }).addTo(map);

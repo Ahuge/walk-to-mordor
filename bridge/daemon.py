@@ -399,6 +399,10 @@ class _ApiHandler(BaseHTTPRequestHandler):
             elif path == "/api/encounters/list":
                 eng = type(self).engine
                 self._send_json({"encounters": eng.list_all() if eng else []})
+            elif path == "/api/pois":
+                eng = type(self).engine
+                pois = eng.pois if eng and hasattr(eng, "pois") else []
+                self._send_json({"pois": pois})
             elif path == "/api/player/state":
                 eng = type(self).engine
                 if eng:
