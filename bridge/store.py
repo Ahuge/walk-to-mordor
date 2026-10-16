@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS commands (
     done_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_commands_status ON commands(status, id);
+CREATE TABLE IF NOT EXISTS encounter_state (
+    encounter_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    unlocked_at TEXT,
+    completed_at TEXT,
+    data TEXT DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS player_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 

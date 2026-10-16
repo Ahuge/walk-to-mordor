@@ -39,6 +39,16 @@
 </div>
 
 <div class="card">
+  <h2>Encounter Test Mode</h2>
+  <p style="font-size:13px;color:#9a8c6d">Force-trigger encounters to stress-test the UI. Open the <a href="/">dashboard</a> in another tab to see them.</p>
+  <div>
+    <button onclick="loadEncounters()">Refresh list</button>
+    <button onclick="resetEncounters()" style="background:#7a2e2e">Reset all</button>
+  </div>
+  <div id="enc-list" style="margin-top:12px;font-size:13px">Loading…</div>
+</div>
+
+<div class="card">
   <h2>Recent Log</h2>
   <div>
     <button onclick="loadLog()">Refresh</button>
@@ -68,8 +78,31 @@ async function loadLog(n) {
   document.getElementById('log').textContent =
     (d && d.lines.length) ? d.lines.join('\n') : '(empty)';
 }
+async function loadEncounters() {
+  const d = await fetch('/api/encounters/list').then(r => r.json()).catch(() => null);
+  const el = document.getElementById('enc-list');
+  if (!d || !d.encounters.length) { el.innerHTML = '(no encounters loaded)'; return; }
+  el.innerHTML = d.encounters.map(e =>
+    `<div class="row"><span class="label">${e.id}</span>` +
+    `<span style="color:#9a8c6d">${e.type} · ${e.meeting} · ${e.status}</span> ` +
+    `<button onclick="triggerEncounter('${e.id}')" style="padding:4px 12px;font-size:12px">Trigger</button></div>`
+  ).join('');
+}
+async function triggerEncounter(id) {
+  await fetch('/api/encounters/trigger', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({encounter_id: id}),
+  });
+  loadEncounters();
+}
+async function resetEncounters() {
+  if (!confirm('Reset all encounter state?')) return;
+  await fetch('/api/encounters/reset', {method: 'POST'});
+  loadEncounters();
+}
 tick(); setInterval(tick, 5000);
 loadLog();
+loadEncounters();
 </script>
 </body>
 </html>

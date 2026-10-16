@@ -30,10 +30,11 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+# Ensure repo root is on sys.path before importing bridge modules.
+# (When run as `python bridge/daemon.py`, only bridge/ is on the path.)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bridge.store import repo_root  # noqa: E402
-
-sys.path.insert(0, str(repo_root()))
 
 from bleak import BleakClient  # noqa: E402
 
@@ -297,6 +298,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
         "last_error": None,
         "last_reading_ts": None,
     }
+    # Encounter engine, set by run().
+    engine = None
 
     def log_message(self, *args):  # quiet
         pass
@@ -390,6 +393,32 @@ class _ApiHandler(BaseHTTPRequestHandler):
                     with open(log_file, encoding="utf-8", errors="replace") as f:
                         lines = f.readlines()[-n:]
                 self._send_json({"lines": [l.rstrip("\n") for l in lines]})
+            elif path == "/api/encounters/active":
+                eng = type(self).engine
+                self._send_json({"encounter": eng.get_active() if eng else None})
+            elif path == "/api/encounters/list":
+                eng = type(self).engine
+                self._send_json({"encounters": eng.list_all() if eng else []})
+            elif path == "/api/encounters/pending":
+                eng = type(self).engine
+                unlock_id = eng.check_pending_unlock() if eng else None
+                self._send_json({"unlock_id": unlock_id})
+            elif path == "/api/pois":
+                eng = type(self).engine
+                pois = eng.pois if eng and hasattr(eng, "pois") else []
+                self._send_json({"pois": pois})
+            elif path == "/api/player/state":
+                eng = type(self).engine
+                if eng:
+                    self._send_json({
+                        "morale": eng.get_morale(),
+                        "supplies": eng.get_supplies(),
+                        "fatigue_m": eng.get_fatigue_m(),
+                        "companion": eng.get_companion(),
+                        "tales": eng.get_player("tales_unlocked", ""),
+                    })
+                else:
+                    self._send_json({"error": "engine not ready"}, 503)
             elif path == "/advanced":
                 return self._serve_repo_file("ui/advanced.html",
                                              "text/html; charset=utf-8")
@@ -422,6 +451,50 @@ class _ApiHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             path = urlparse(self.path).path
+            if path == "/api/encounters/dismiss":
+                eng = type(self).engine
+                if eng:
+                    eng.dismiss_active()
+                return self._send_json({"ok": True})
+            if path == "/api/encounters/defer":
+                eng = type(self).engine
+                if eng:
+                    eng.defer_active()
+                return self._send_json({"ok": True})
+            if path == "/api/encounters/trigger":
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b"{}")
+                except Exception:
+                    return self._send_json({"error": "bad json"}, 400)
+                eng = type(self).engine
+                ok = eng.force_trigger(data.get("encounter_id", "")) if eng else False
+                return self._send_json({"ok": ok})
+            if path == "/api/encounters/reset":
+                eng = type(self).engine
+                if eng:
+                    eng.reset_all()
+                return self._send_json({"ok": True})
+            if path == "/api/encounters/camp":
+                eng = type(self).engine
+                result = eng.camp() if eng else {"error": "no engine"}
+                return self._send_json(result)
+            if path == "/api/encounters/complete":
+                eng = type(self).engine
+                if eng:
+                    eng.complete_active()
+                return self._send_json({"ok": True})
+            if path == "/api/encounters/respond":
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b"{}")
+                except Exception:
+                    return self._send_json({"error": "bad json"}, 400)
+                eng = type(self).engine
+                result = eng.respond_to_active(data.get("choice_id", "")) if eng else None
+                if result:
+                    return self._send_json({"ok": True, **result})
+                return self._send_json({"error": "invalid choice"}, 400)
             if path != "/api/commands":
                 return self._send_json({"error": "not found"}, 404)
             length = int(self.headers.get("Content-Length", 0) or 0)
@@ -483,8 +556,11 @@ async def run() -> None:
     # written; re-queue it so it isn't lost.
     db.execute("UPDATE commands SET status='pending' WHERE status='running'")
     db.commit()
+    from bridge.encounters import EncounterEngine
+    engine = EncounterEngine(db, lock, repo_root() / "packs" / "lotr")
     _ApiHandler.db = db
     _ApiHandler.lock = lock
+    _ApiHandler.engine = engine
     log.info("daemon started, db=%s", ddir / "walks.db")
 
     api_thread = threading.Thread(target=_serve_api_forever, daemon=True,
@@ -541,6 +617,15 @@ async def run() -> None:
                         db.commit()
                     state["row"] = row
                     tracker.reading(ts, row)
+                    # Encounter triggers (needs total journey km + fraction)
+                    try:
+                        from bridge.stats import march_stats, route_position, load_route
+                        _, total_m, _, _, _ = march_stats(db)
+                        route = load_route()
+                        _, _, journey_frac = route_position(route, total_m)
+                        engine.on_reading(ts, row, total_m / 1000.0, journey_frac)
+                    except Exception:
+                        log.exception("encounter on_reading failed")
 
                 await client.start_notify(TREADMILL_DATA_UUID, on_notify)
                 worker = asyncio.create_task(
