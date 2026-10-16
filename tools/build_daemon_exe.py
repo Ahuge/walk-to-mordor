@@ -29,6 +29,9 @@ def main() -> None:
         ("packs/lotr/art/icon.png", "packs/lotr/art"),
         ("packs/lotr/art/icons", "packs/lotr/art/icons"),
         ("packs/lotr/route.json", "packs/lotr"),
+        ("packs/lotr/pois.json", "packs/lotr"),
+        ("packs/lotr/encounters", "packs/lotr/encounters"),
+        ("ui/advanced.html", "ui"),
     ]
     cmd = [
         sys.executable, "-m", "PyInstaller",

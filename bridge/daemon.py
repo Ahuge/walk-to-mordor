@@ -395,6 +395,9 @@ class _ApiHandler(BaseHTTPRequestHandler):
             elif path == "/api/encounters/active":
                 eng = type(self).engine
                 self._send_json({"encounter": eng.get_active() if eng else None})
+            elif path == "/api/encounters/list":
+                eng = type(self).engine
+                self._send_json({"encounters": eng.list_all() if eng else []})
             elif path == "/api/player/state":
                 eng = type(self).engine
                 if eng:
@@ -446,6 +449,20 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 eng = type(self).engine
                 if eng:
                     eng.defer_active()
+                return self._send_json({"ok": True})
+            if path == "/api/encounters/trigger":
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b"{}")
+                except Exception:
+                    return self._send_json({"error": "bad json"}, 400)
+                eng = type(self).engine
+                ok = eng.force_trigger(data.get("encounter_id", "")) if eng else False
+                return self._send_json({"ok": ok})
+            if path == "/api/encounters/reset":
+                eng = type(self).engine
+                if eng:
+                    eng.reset_all()
                 return self._send_json({"ok": True})
             if path == "/api/encounters/complete":
                 eng = type(self).engine

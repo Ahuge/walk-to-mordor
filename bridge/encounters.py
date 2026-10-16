@@ -185,6 +185,41 @@ class EncounterEngine:
             log.info("encounter deferred: %s", self.active_id)
             self.active_id = None
 
+    # --- test mode ---
+
+    def list_all(self) -> list[dict]:
+        """List all encounters with their current status (for test UI)."""
+        out = []
+        for eid, enc in self.encounters.items():
+            out.append({
+                "id": eid,
+                "type": enc["meta"].get("type", "?"),
+                "meeting": enc["meta"].get("meeting", "?"),
+                "status": self.get_status(eid),
+            })
+        return sorted(out, key=lambda e: e["id"])
+
+    def force_trigger(self, eid: str) -> bool:
+        """Force-activate an encounter (test mode). Returns success."""
+        if eid not in self.encounters:
+            return False
+        if self.active_id:
+            self.dismiss_active()
+        # Reset to locked so it can trigger, then activate
+        self.set_status(eid, "locked")
+        self._activate(eid)
+        log.info("test: force-triggered %s", eid)
+        return True
+
+    def reset_all(self):
+        """Reset all encounter state (test mode)."""
+        with self.lock:
+            self.db.execute("DELETE FROM encounter_state")
+            self.db.commit()
+        self.active_id = None
+        self._last_trigger_km = 0.0
+        log.info("test: reset all encounter state")
+
     def _activate(self, eid: str):
         self.active_id = eid
         self.set_status(eid, "active")
