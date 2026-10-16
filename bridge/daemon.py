@@ -403,8 +403,10 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 if eng:
                     self._send_json({
                         "morale": eng.get_morale(),
-                        "supplies": eng.get_player("supplies", "0"),
-                        "companion": eng.get_player("companion_id", ""),
+                        "supplies": eng.get_supplies(),
+                        "fatigue_m": eng.get_fatigue_m(),
+                        "companion": eng.get_companion(),
+                        "tales": eng.get_player("tales_unlocked", ""),
                     })
                 else:
                     self._send_json({"error": "engine not ready"}, 503)
@@ -464,6 +466,10 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 if eng:
                     eng.reset_all()
                 return self._send_json({"ok": True})
+            if path == "/api/encounters/camp":
+                eng = type(self).engine
+                result = eng.camp() if eng else {"error": "no engine"}
+                return self._send_json(result)
             if path == "/api/encounters/complete":
                 eng = type(self).engine
                 if eng:

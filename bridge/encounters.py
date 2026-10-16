@@ -102,6 +102,14 @@ class EncounterEngine:
         if m != 0:
             self.set_morale(m * 0.9995)
 
+        # Companion dialogue tracking
+        self._update_companion(row)
+
+        # Fatigue accumulation (distance-based)
+        speed = row.get("speed_kmh") or 0.0
+        if speed > 0.1:
+            self.add_fatigue(speed / 3.6)  # meters per second
+
         # Update active challenge (if any)
         if self.active_id:
             self._update_challenge(row)
@@ -148,6 +156,122 @@ class EncounterEngine:
                 # Create a synthetic encounter for this POI
                 self._activate_poi(poi)
                 break
+
+    # --- hazards ---
+
+    def get_active_hazard(self, journey_frac: float) -> dict | None:
+        """Check if journey_frac is in a hazard zone.
+        Hazard zones defined in pack hazards.json or route metadata.
+        For now: hardcoded ranges (Phase D stub, config-driven later).
+        """
+        # Example: mountains at 0.3-0.4, mire at 0.6-0.65
+        hazards = [
+            {"type": "mountain", "start": 0.30, "end": 0.38,
+             "amplitude": 3.0, "wavelength_m": 500},
+            {"type": "mire", "start": 0.60, "end": 0.65,
+             "cap_kmh": 1.5},
+        ]
+        for h in hazards:
+            if h["start"] <= journey_frac <= h["end"]:
+                return h
+        return None
+
+    def hazard_incline_target(self, journey_frac: float,
+                              total_m: float) -> float | None:
+        """For mountain hazards: compute wave incline target."""
+        h = self.get_active_hazard(journey_frac)
+        if not h or h["type"] != "mountain":
+            return None
+        import math
+        # Sine wave over distance
+        return h["amplitude"] * (0.5 + 0.5 * math.sin(
+            total_m * 2 * math.pi / h["wavelength_m"]))
+
+    # --- rest & fatigue ---
+
+    def get_fatigue_m(self) -> float:
+        try:
+            return float(self.get_player("fatigue_m", "0"))
+        except ValueError:
+            return 0.0
+
+    def add_fatigue(self, meters: float):
+        self.set_player("fatigue_m", str(self.get_fatigue_m() + meters))
+
+    def reset_fatigue(self):
+        self.set_player("fatigue_m", "0")
+        log.info("fatigue reset (rested)")
+
+    def get_supplies(self) -> int:
+        try:
+            return int(self.get_player("supplies", "0"))
+        except ValueError:
+            return 0
+
+    def spend_supplies(self, n: int) -> bool:
+        cur = self.get_supplies()
+        if cur < n:
+            return False
+        self.set_player("supplies", str(cur - n))
+        return True
+
+    def camp(self) -> dict:
+        """Take a night's rest. Returns summary."""
+        morale_before = self.get_morale()
+        # Consume 1 supply for hearty meal if available
+        had_meal = self.spend_supplies(1)
+        self.adjust_morale(15 if had_meal else 5)
+        self.reset_fatigue()
+        # Dismiss companion for the night (they'll return)
+        # Unlock next campfire tale
+        tales = self.get_player("tales_unlocked", "").split(",")
+        tales = [t for t in tales if t]
+        next_tale = len(tales) + 1
+        tales.append(f"leg{next_tale:02d}")
+        self.set_player("tales_unlocked", ",".join(tales))
+        return {
+            "morale_gain": self.get_morale() - morale_before,
+            "had_meal": had_meal,
+            "tale_unlocked": f"leg{next_tale:02d}",
+        }
+
+    # --- companions ---
+
+    def set_companion(self, npc_id: str):
+        self.set_player("companion_id", npc_id)
+        self.set_player(f"companion_{npc_id}_km", "0")
+        log.info("companion joined: %s", npc_id)
+
+    def dismiss_companion(self):
+        cid = self.get_player("companion_id", "")
+        if cid:
+            log.info("companion left: %s", cid)
+        self.set_player("companion_id", "")
+
+    def get_companion(self) -> str:
+        return self.get_player("companion_id", "")
+
+    def _update_companion(self, row: dict):
+        """Track companion distance, trigger dialogue every 0.5-1km."""
+        cid = self.get_companion()
+        if not cid:
+            return
+        # Accumulate distance (simplified: use speed)
+        speed = row.get("speed_kmh") or 0.0
+        if speed > 0.1:
+            key = f"companion_{cid}_km"
+            try:
+                cur = float(self.get_player(key, "0"))
+            except ValueError:
+                cur = 0.0
+            cur += speed / 3600.0  # km per second
+            self.set_player(key, str(cur))
+            # Dialogue every 0.75km
+            last_dlg = float(self.get_player(f"companion_{cid}_last_dlg", "0"))
+            if cur - last_dlg >= 0.75:
+                self.set_player(f"companion_{cid}_last_dlg", str(cur))
+                # Queue dialogue as a toast encounter (simplified)
+                log.info("companion %s dialogue at %.2fkm", cid, cur)
 
     def _activate_poi(self, poi: dict):
         """Activate a POI as an encounter."""
