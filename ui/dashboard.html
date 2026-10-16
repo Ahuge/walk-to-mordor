@@ -339,6 +339,7 @@ async function addOverlays() {
     groups[g].addLayer(marker);
   }
   // POIs from the encounter pack (custom SVG icons by type)
+  // Detours: dashed line from main path to offset POI location
   const poiData = await fetch('/api/pois').then(r => r.json()).catch(() => null);
   if (poiData && poiData.pois) {
     const iconMap = {
@@ -348,15 +349,36 @@ async function addOverlays() {
       campsite: '/icons/choice.svg',
     };
     for (const p of poiData.pois) {
-      const pos = pointAt(p.journey_frac * totalPx);
-      const marker = L.marker(pos, {
+      const pathPos = pointAt(p.journey_frac * totalPx);
+      let markerPos = pathPos;
+      const detourKm = p.detour_km || 0;
+      if (detourKm > 0 && detourKm <= 10) {
+        // Calculate offset point: perpendicular to path direction
+        // Scale: approximate px per km from journey data
+        const pxPerKm = totalPx / (journey.total_km || 193);
+        const offsetPx = detourKm * pxPerKm * 0.5;  // visual scale
+        // Get path direction at this point
+        const p2 = pointAt(Math.min(1, p.journey_frac + 0.001) * totalPx);
+        const dx = p2[0] - pathPos[0], dy = p2[1] - pathPos[1];
+        const len = Math.hypot(dx, dy) || 1;
+        // Perpendicular offset
+        const ox = -dy / len * offsetPx, oy = dx / len * offsetPx;
+        markerPos = [pathPos[0] + ox, pathPos[1] + oy];
+        // Draw detour path: out and back (dashed)
+        const detourLine = L.polyline([pathPos, markerPos, pathPos], {
+          color: '#8b9dc3', weight: 2, dashArray: '6, 4', opacity: 0.7,
+        });
+        detourLine.bindPopup(`<b>Detour to ${p.name}</b><br>${detourKm}km off path`);
+        groups['POIs'].addLayer(detourLine);
+      }
+      const marker = L.marker(markerPos, {
         icon: L.icon({ iconUrl: iconMap[p.type] || iconMap.history,
                        iconSize: [24, 24], iconAnchor: [12, 24],
                        popupAnchor: [0, -20] }),
         title: p.name,
       });
       const wiki = p.wiki ? `<br><a href="${p.wiki}" target="_blank" rel="noopener">Learn more</a>` : '';
-      const detour = p.detour_km ? `<br><i>Detour: ${p.detour_km}km</i>` : '';
+      const detour = detourKm ? `<br><i>Detour: ${detourKm}km</i>` : '';
       marker.bindPopup(`<b>${p.name}</b><br><i>${p.type}</i>${detour}${wiki}`);
       groups['POIs'].addLayer(marker);
     }
