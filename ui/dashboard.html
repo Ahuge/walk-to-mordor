@@ -434,10 +434,16 @@ async function tick() {
 }
 
 let lastEncounterId = null;
+let showingFollowup = false;
 const isWidget = () => document.body.classList.contains('widget');
 async function checkEncounter() {
   const d = await fetch('/api/encounters/active').then(r => r.json()).catch(() => null);
   const enc = d && d.encounter;
+  if (showingFollowup) {
+    // Don't auto-hide a followup dialogue; user must dismiss it.
+    // Clear the flag once they do (hideEncounter sets it false).
+    return;
+  }
   if (enc && enc.id !== lastEncounterId) {
     lastEncounterId = enc.id;
     if (isWidget()) showWidgetEncounter(enc);
@@ -485,9 +491,16 @@ function showWidgetEncounter(enc) {
         if (r && r.ok) {
           if (r.followup) {
             // Show followup in widget banner
+            showingFollowup = true;
             document.getElementById('we-title').textContent = r.label;
             document.getElementById('we-body').textContent = r.followup.slice(0, 120) + '…';
-            document.getElementById('we-actions').innerHTML = '';
+            const wa = document.getElementById('we-actions');
+            wa.innerHTML = '';
+            const dismissBtn = document.createElement('button');
+            dismissBtn.textContent = 'OK';
+            dismissBtn.style.cssText = 'background:#4a4234;color:#f3e9d2;border:none;border-radius:4px;padding:4px 10px;margin:2px;font-size:11px;cursor:pointer';
+            dismissBtn.onclick = () => { hideWidgetEncounter(); lastEncounterId = null; };
+            wa.appendChild(dismissBtn);
             document.getElementById('widget-encounter').style.display = 'block';
             lastEncounterId = 'followup_shown';
           } else if (r.consequence) {
@@ -519,6 +532,7 @@ function updateWidgetProgress(enc) {
   }
 }
 function hideWidgetEncounter() {
+  showingFollowup = false;
   document.getElementById('widget-encounter').style.display = 'none';
 }
 function updateChallengeProgress(enc) {
@@ -594,6 +608,7 @@ function showEncounter(enc) {
         if (r && r.ok) {
           if (r.followup) {
             // Show branching followup dialogue
+            showingFollowup = true;
             showEncounter({
               id: enc.id + '_followup',
               meta: {id: r.label},
@@ -628,6 +643,7 @@ function showEncounter(enc) {
   document.getElementById('enc-backdrop').style.display = 'block';
 }
 function hideEncounter() {
+  showingFollowup = false;
   document.getElementById('encounter-modal').style.display = 'none';
   document.getElementById('enc-backdrop').style.display = 'none';
 }
