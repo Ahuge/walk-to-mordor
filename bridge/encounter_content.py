@@ -74,6 +74,41 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
     return meta, body.strip()
 
 
+def validate_encounter(enc: dict) -> list[str]:
+    """Check an encounter for common issues. Returns list of error strings."""
+    errors = []
+    eid = enc.get("id", "?")
+    meta = enc.get("meta", {})
+    body = enc.get("body", "")
+    if not meta.get("type"):
+        errors.append(f"{eid}: missing type")
+    elif meta["type"] not in ("vignette", "choice", "challenge", "companion",
+                              "tale", "poi", "unlock"):
+        errors.append(f"{eid}: unknown type '{meta['type']}'")
+    if not body.strip():
+        errors.append(f"{eid}: empty body")
+    if meta.get("type") == "choice":
+        choices = meta.get("choices", [])
+        if not choices:
+            errors.append(f"{eid}: choice type but no choices defined")
+        for c in choices:
+            parts = c.split(":", 2)
+            if len(parts) < 2:
+                errors.append(f"{eid}: malformed choice '{c}'")
+        # Check followups match choice IDs
+        followups = meta.get("followups", {})
+        if isinstance(followups, dict):
+            choice_ids = {c.split(":", 1)[0].strip() for c in choices}
+            for fid in followups:
+                if fid not in choice_ids:
+                    errors.append(f"{eid}: followup '{fid}' has no matching choice")
+    if meta.get("type") == "challenge":
+        ctype = meta.get("challenge_type")
+        if ctype not in ("speed", "stealth", "incline"):
+            errors.append(f"{eid}: invalid challenge_type '{ctype}'")
+    return errors
+
+
 def load_encounters(pack_dir: Path) -> dict[str, dict]:
     """Load all encounters from packs/<id>/encounters/. Returns {id: encounter}."""
     out = {}

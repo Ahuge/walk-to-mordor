@@ -28,8 +28,12 @@ class EncounterEngine:
         self._load()
 
     def _load(self):
-        from bridge.encounter_content import load_encounters
+        from bridge.encounter_content import load_encounters, validate_encounter
         self.encounters = load_encounters(self.pack_dir)
+        # Validate and log issues
+        for eid, enc in self.encounters.items():
+            for err in validate_encounter(enc):
+                log.warning("encounter validation: %s", err)
         # Load POIs
         import json
         poi_path = self.pack_dir / "pois.json"
@@ -457,6 +461,7 @@ class EncounterEngine:
                 consequence = parts[2].strip() if len(parts) > 2 else ""
                 # Apply morale/supply effects from consequence tags
                 # Format: "morale+10" or "supplies+1" or "unlock:encounter_id"
+                unlock_id = None
                 for tag in consequence.split(","):
                     tag = tag.strip()
                     if tag.startswith("morale"):
@@ -477,6 +482,20 @@ class EncounterEngine:
                 # Get followup dialogue if defined
                 followups = meta.get("followups", {})
                 followup = followups.get(choice_id, "") if isinstance(followups, dict) else ""
+                # Queue unlock for auto-trigger (after followup is dismissed)
+                if unlock_id:
+                    self._pending_unlock = unlock_id
                 return {"label": label, "consequence": consequence,
-                        "followup": followup}
+                        "followup": followup,
+                        "unlock_id": unlock_id}
+        return None
+
+    def check_pending_unlock(self) -> str | None:
+        """Called by dashboard poll. Returns encounter ID to auto-trigger,
+        or None. Clears the pending unlock."""
+        unlock_id = getattr(self, "_pending_unlock", None)
+        if unlock_id:
+            self._pending_unlock = None
+            if unlock_id in self.encounters:
+                return unlock_id
         return None

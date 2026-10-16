@@ -399,6 +399,10 @@ class _ApiHandler(BaseHTTPRequestHandler):
             elif path == "/api/encounters/list":
                 eng = type(self).engine
                 self._send_json({"encounters": eng.list_all() if eng else []})
+            elif path == "/api/encounters/pending":
+                eng = type(self).engine
+                unlock_id = eng.check_pending_unlock() if eng else None
+                self._send_json({"unlock_id": unlock_id})
             elif path == "/api/pois":
                 eng = type(self).engine
                 pois = eng.pois if eng and hasattr(eng, "pois") else []

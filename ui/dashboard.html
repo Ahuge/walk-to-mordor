@@ -691,6 +691,18 @@ function hideEncounter() {
   showingFollowup = false;
   document.getElementById('encounter-modal').style.display = 'none';
   document.getElementById('enc-backdrop').style.display = 'none';
+  // Check for pending unlock chain
+  checkPendingUnlock();
+}
+async function checkPendingUnlock() {
+  const d = await fetch('/api/encounters/pending').then(r => r.json()).catch(() => null);
+  if (d && d.unlock_id) {
+    // Trigger the unlocked encounter
+    await fetch('/api/encounters/trigger', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({encounter_id: d.unlock_id}),
+    }).catch(() => {});
+  }
 }
 document.getElementById('enc-dismiss').onclick = async () => {
   await fetch('/api/encounters/complete', {method: 'POST'}).catch(() => {});
