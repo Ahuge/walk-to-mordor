@@ -5,18 +5,36 @@ from pathlib import Path
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
-    """Split '---\\n...\\n---\\n<body>' into (metadata dict, body)."""
+    """Split '---\\n...\\n---\\n<body>' into (metadata dict, body).
+    Supports simple key: value pairs and key:\\n  - list items.
+    """
     m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
     if not m:
         return {}, text
     raw, body = m.groups()
     meta = {}
+    current_list_key = None
     for line in raw.split("\n"):
-        line = line.strip()
-        if not line or ":" not in line:
+        stripped = line.strip()
+        if not stripped:
+            current_list_key = None
             continue
-        k, v = line.split(":", 1)
-        k, v = k.strip(), v.strip()
+        # List item (indented dash)
+        if stripped.startswith("- ") and current_list_key:
+            item = stripped[2:].strip().strip('"').strip("'")
+            meta[current_list_key].append(item)
+            continue
+        if ":" not in stripped:
+            current_list_key = None
+            continue
+        k, v = stripped.split(":", 1)
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if not v:
+            # Start of a list (e.g. "choices:")
+            meta[k] = []
+            current_list_key = k
+            continue
+        current_list_key = None
         # Simple type coercion
         if v.lower() in ("true", "false"):
             v = v.lower() == "true"
