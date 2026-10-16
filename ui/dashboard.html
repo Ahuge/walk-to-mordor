@@ -476,12 +476,13 @@ function showWidgetEncounter(enc) {
       const parts = c.split(':');
       const cid = parts[0].trim(), label = (parts[1] || cid).trim();
       mkBtn(label, async () => {
-        await fetch('/api/encounters/respond', {
+        const r = await fetch('/api/encounters/respond', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({choice_id: cid}),
-        }).catch(() => {});
+        }).then(r => r.json()).catch(() => null);
         hideWidgetEncounter();
         lastEncounterId = null;
+        if (r && r.ok && r.consequence) toast(`${r.label}: ${r.consequence}`);
       });
     }
   } else if (enc.meta.challenge_type) {
@@ -573,12 +574,18 @@ function showEncounter(enc) {
       b.textContent = label;
       b.style.cssText = 'background:#4a4234;color:#f3e9d2;border:none;border-radius:6px;padding:8px 16px;margin:4px;cursor:pointer';
       b.onclick = async () => {
-        await fetch('/api/encounters/respond', {
+        const r = await fetch('/api/encounters/respond', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({choice_id: cid}),
-        }).catch(() => {});
+        }).then(r => r.json()).catch(() => null);
         hideEncounter();
         lastEncounterId = null;
+        if (r && r.ok) {
+          // Show consequence as toast
+          const msg = r.consequence ?
+            `${r.label}: ${r.consequence}` : `Chose: ${r.label}`;
+          toast(msg);
+        }
       };
       btnRow.appendChild(b);
     }
