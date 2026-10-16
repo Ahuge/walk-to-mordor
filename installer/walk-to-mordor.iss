@@ -26,6 +26,7 @@ DisableDirPage=no
 Source: "..\dist\WalkToMordorDaemon.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorWidget.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorNudge.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "launch.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Walk to Mordor Dashboard"; Filename: "http://127.0.0.1:8471/"
@@ -50,6 +51,14 @@ Filename: "schtasks"; \
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordor"" /f"; Flags: runhidden
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordorWidget"" /f"; Flags: runhidden
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordorNudge"" /f"; Flags: runhidden
+
+[Run]
+; Offer to launch after install. The script stops old tasks, kills stray
+; widgets, starts the daemon, waits 2s, then starts the widget.
+Filename: "powershell"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\launch.ps1"""; \
+  Description: "Launch Walk To Mordor"; \
+  Flags: postinstall skipifsilent runhidden
 
 [Code]
 function InitializeSetup(): Boolean;
