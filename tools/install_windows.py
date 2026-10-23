@@ -108,10 +108,10 @@ def main() -> None:
         return
     if sys.platform != "win32":
         sys.exit("this installer is for Windows only")
-    _stop_daemon(repo)
     daemon = repo / "bridge" / "daemon.py"
     if not daemon.exists():
         sys.exit(f"daemon not found: {daemon}")
+    _stop_daemon(repo)
     _create_task(TASK_NAME, daemon)
     print("  data: %LOCALAPPDATA%\\walk-to-mordor\\walks.db")
     if "--widget" in sys.argv:

@@ -53,8 +53,14 @@ Filename: "schtasks"; \
 Filename: "powershell"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\harden_tasks.ps1"""; \
   Flags: runhidden; StatusMsg: "Hardening background tasks…"
+; Silent upgrades stop the old daemon in PrepareToInstall; restart it.
+Filename: "schtasks"; Parameters: "/run /tn ""WalkToMordor"""; \
+  Flags: runhidden; Check: IsSilent
 
 [UninstallRun]
+Filename: "powershell"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\stop_daemon.ps1"""; \
+  Flags: runhidden waituntilterminated
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordor"" /f"; Flags: runhidden
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordorWidget"" /f"; Flags: runhidden
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordorNudge"" /f"; Flags: runhidden
@@ -68,18 +74,35 @@ Filename: "powershell"; \
   Flags: postinstall skipifsilent runhidden
 
 [Code]
+function IsSilent: Boolean;
+begin
+  Result := WizardSilent;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  Params: String;
 begin
   { Stop the old daemon before [Files] tries to replace its exe, otherwise
     Windows keeps the old binary locked and the upgrade silently runs old
     code. This also stops a source-run `pythonw bridge\daemon.py`. }
   ExtractTemporaryFile('stop_daemon.ps1');
-  Exec('powershell.exe',
-       '-NoProfile -ExecutionPolicy Bypass -File "' +
-       ExpandConstant('{tmp}\stop_daemon.ps1') + '"',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Params := '-NoProfile -ExecutionPolicy Bypass -File "' +
+            ExpandConstant('{tmp}\stop_daemon.ps1') + '"';
+  if not Exec('powershell.exe', Params, '', SW_HIDE,
+              ewWaitUntilTerminated, ResultCode) then
+  begin
+    Result := 'Could not run PowerShell to stop the old daemon. ' +
+              'Close Walk to Mordor and run the installer again.';
+    Exit;
+  end;
+  if ResultCode <> 0 then
+  begin
+    Result := 'Could not stop the old daemon (exit code ' +
+              IntToStr(ResultCode) + '). Close it and run the installer again.';
+    Exit;
+  end;
   Result := '';
 end;
 

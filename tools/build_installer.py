@@ -45,20 +45,19 @@ def find_iscc() -> Path:
 
 def _set_version(version: str) -> None:
     """Make version.py and the .iss agree with the requested version."""
-    vpath = REPO / "bridge" / "version.py"
-    text = vpath.read_text(encoding="utf-8")
-    text, n = re.subn(r'__version__ = "[^"]*"',
-                      f'__version__ = "{version}"', text)
-    if n:
-        vpath.write_text(text, encoding="utf-8")
-    iss_path = REPO / "installer" / "walk-to-mordor.iss"
-    text = iss_path.read_text(encoding="utf-8")
-    text, n = re.subn(r'#define MyAppVersion "[^"]*"',
-                      f'#define MyAppVersion "{version}"', text)
-    if n:
-        iss_path.write_text(text, encoding="utf-8")
-    else:
-        print("warning: could not patch version in .iss")
+    for path, pattern, label in (
+        (REPO / "bridge" / "version.py", r'__version__ = "[^"]*"',
+         "bridge/version.py"),
+        (REPO / "installer" / "walk-to-mordor.iss",
+         r'#define MyAppVersion "[^"]*"', "installer/walk-to-mordor.iss"),
+    ):
+        original = path.read_text(encoding="utf-8")
+        text, n = re.subn(pattern, pattern.replace('"[^"]*"', f'"{version}"'),
+                          original)
+        if not n:
+            sys.exit(f"could not patch version in {label}")
+        if text != original:
+            path.write_text(text, encoding="utf-8")
 
 
 def main() -> None:
@@ -85,11 +84,11 @@ def main() -> None:
     print(f"=== building installer with {iscc} ===")
     iss_path = REPO / "installer" / "walk-to-mordor.iss"
     subprocess.run([str(iscc), str(iss_path)], cwd=REPO, check=True)
-    setups = sorted((REPO / "dist").glob("WalkToMordorSetup-*.exe"))
-    if setups:
-        print(f"done: {setups[-1]}")
+    expected = REPO / "dist" / f"WalkToMordorSetup-{version}.exe"
+    if expected.exists():
+        print(f"done: {expected}")
     else:
-        print("done (installer exe not found in dist/ — check ISCC output)")
+        print(f"done (expected {expected} — check ISCC output)")
 
 
 if __name__ == "__main__":

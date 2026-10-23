@@ -6,21 +6,16 @@
 # source installs harden only the tasks they actually created.
 #
 # Settings:
-#   * restart on failure after 1 minute (the daemon logs and exits nonzero)
-#   * keep running on battery
-#   * no 72-hour execution limit
-#   * start when a missed logon trigger becomes available
+#   * daemon/widget/minimap restart on failure after 1 minute
+#   * the daily nudge does not restart or fire late (no notification spam)
+#   * all tasks keep running on battery and have no 72-hour limit
+#   * logon tasks start when a missed trigger becomes available
 #   * never run two copies of the same task
 
 $ErrorActionPreference = 'Stop'
-$names = @(
-    'WalkToMordor',
-    'WalkToMordorWidget',
-    'WalkToMordorNudge',
-    'WalkToMordorMinimap'
-)
+$serviceNames = @('WalkToMordor', 'WalkToMordorWidget', 'WalkToMordorMinimap')
 
-$settings = New-ScheduledTaskSettingsSet `
+$serviceSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
@@ -30,13 +25,26 @@ $settings = New-ScheduledTaskSettingsSet `
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -MultipleInstances IgnoreNew
 
+$dailySettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -DontStopOnIdleEnd `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -RestartCount 0 `
+    -MultipleInstances IgnoreNew
+
 $found = 0
-foreach ($name in $names) {
+foreach ($name in ($serviceNames + 'WalkToMordorNudge')) {
     $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     if ($null -eq $task) { continue }
+    if ($name -eq 'WalkToMordorNudge') {
+        $settings = $dailySettings
+    } else {
+        $settings = $serviceSettings
+    }
     try {
         Set-ScheduledTask -TaskName $name -Settings $settings | Out-Null
-        Write-Host "hardened: $name (restart on failure, no battery stop, unlimited runtime)"
+        Write-Host "hardened: $name"
         $found++
     } catch {
         Write-Warning "could not harden ${name}: $_"
