@@ -355,6 +355,18 @@ class _ApiHandler(BaseHTTPRequestHandler):
 
     def _require_auth(self) -> bool:
         ip = self.client_address[0] if self.client_address else None
+        origin = self.headers.get("Origin")
+        allowed = {
+            f"http://127.0.0.1:{API_PORT}",
+            f"http://localhost:{API_PORT}",
+            f"http://[::1]:{API_PORT}",
+        }
+        if origin and origin.rstrip("/") not in allowed:
+            # Block a malicious page from driving the belt via localhost.
+            log.warning("API: rejected origin %s for %s %s from %s",
+                        origin, self.command, self.path, ip)
+            self._send_json({"error": "forbidden origin"}, 403)
+            return False
         if auth.authorized(self.headers, ip):
             return True
         log.warning("API: rejected unauthenticated %s %s from %s",
@@ -527,8 +539,16 @@ class _ApiHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._require_auth():
             return
+        path = urlparse(self.path).path
+        # Requiring JSON forces a CORS preflight for cross-origin browsers,
+        # which this server never approves.
+        if path in ("/api/commands", "/api/encounters/respond",
+                    "/api/encounters/trigger"):
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0]
+            if ctype.strip().lower() != "application/json":
+                return self._send_json(
+                    {"error": "Content-Type must be application/json"}, 415)
         try:
-            path = urlparse(self.path).path
             if path == "/api/encounters/dismiss":
                 eng = type(self).engine
                 if eng:
