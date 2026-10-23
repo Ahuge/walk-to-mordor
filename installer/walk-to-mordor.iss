@@ -3,7 +3,7 @@
 ; Or manually: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/walk-to-mordor.iss
 
 #define MyAppName "Walk to Mordor"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Alex Hughes"
 
 [Setup]
