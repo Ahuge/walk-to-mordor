@@ -648,7 +648,7 @@ async def run() -> None:
     if db.execute("SELECT 1 FROM meta WHERE key='open_march'").fetchone():
         log.warning("found an open march from a previous run; run"
                     " `python bridge/rebuild.py --apply` to recover any"
-                    " distance captured after the crash")
+                    " distance captured after the crash and clear the marker")
     from bridge.encounters import EncounterEngine
     engine = EncounterEngine(db, lock, repo_root() / "packs" / "lotr")
     _ApiHandler.db = db

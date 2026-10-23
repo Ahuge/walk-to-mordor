@@ -155,6 +155,10 @@ def main() -> None:
                 covered.append((start, end, st["distance_m"]))
                 added += 1
         if apply:
+            if not daemon_live:
+                # The marker only exists to protect a *live* march; clear it
+                # so the daemon stops warning about a crash on every start.
+                db.execute("DELETE FROM meta WHERE key='open_march'")
             db.commit()
         print(f"done: {added} inserted, {skipped} skipped"
               + ("" if apply else " (dry run — use --apply to write)"))

@@ -34,9 +34,13 @@ $found = 0
 foreach ($name in $names) {
     $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     if ($null -eq $task) { continue }
-    Set-ScheduledTask -TaskName $name -Settings $settings | Out-Null
-    Write-Host "hardened: $name (restart on failure, no battery stop, unlimited runtime)"
-    $found++
+    try {
+        Set-ScheduledTask -TaskName $name -Settings $settings | Out-Null
+        Write-Host "hardened: $name (restart on failure, no battery stop, unlimited runtime)"
+        $found++
+    } catch {
+        Write-Warning "could not harden ${name}: $_"
+    }
 }
 
 if ($found -eq 0) {
