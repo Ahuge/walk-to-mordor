@@ -64,7 +64,7 @@ Walking pad --BLE FTMS--> Daemon --SQLite--> walks.db
 
 - **Daemon** (`bridge/daemon.py`): Auto-connects to the pad via Bluetooth FTMS, logs 1/sec readings (speed, distance, incline, calories, steps) to SQLite, serves the HTTP API and dashboard.
 - **Marches**: A march starts when the belt moves, ends after 60s idle or on disconnect. Saved to the `marches` table with full stats.
-- **API** (`127.0.0.1:8471`): `GET /api/stats`, `POST /api/commands` (start/stop/speed/incline), `GET /api/route`, `GET /api/marches`, `GET /api/log`.
+- **API** (`127.0.0.1:8471`): `GET /api/stats`, `POST /api/commands` (start/stop/speed/incline), `GET /api/route`, `GET /api/marches`, `GET /api/log`. Loopback callers need no credentials; remote callers must send `Authorization: Bearer <token>` using the token in `%LOCALAPPDATA%\walk-to-mordor\api.token` (created at daemon startup).
 - **Dashboard** (`ui/dashboard.html`): Leaflet map with the journey route, live token, fog-of-war, leg progress, belt controls, march log, steps graph, and an Advanced page (`/advanced`) with BLE diagnostics.
 - **Widget** (`ui/widget.py`): Borderless always-on-top pywebview window showing the map in compact mode.
 
@@ -122,4 +122,5 @@ Map: Yohann Bethoule / [middleearthmap.app](https://middleearthmap.app/) (base m
 - UREVO SpaceWalk pads expose standard Bluetooth [FTMS](https://www.bluetooth.com/specifications/specs/fitness-machine-service-1-0/) (`0x1826`). Byte map in `docs/protocol.md`.
 - Storage: `%LOCALAPPDATA%\walk-to-mordor\walks.db` (log: `daemon.log` alongside).
 - The pad streams only the current session over BLE — `walks.db` is the historian.
-- API binds `0.0.0.0:8471`; keep it firewalled to your LAN.
+- API binds `0.0.0.0:8471`; keep it firewalled to your LAN. Non-loopback requests require the bearer token, and the daemon refuses to start twice (lock file in the data directory).
+- The logon tasks restart after a failure, run on battery, and have no 72-hour limit. The installer applies these; for source installs, `tools/install_windows.py` does it, or run `powershell -ExecutionPolicy Bypass -File installer\harden_tasks.ps1`.
