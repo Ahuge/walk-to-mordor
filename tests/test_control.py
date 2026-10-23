@@ -14,6 +14,7 @@ import treadmill.control as control  # noqa: E402
 from treadmill.control import INCLINE_RANGE_UUID, SPEED_RANGE_UUID  # noqa: E402
 
 log = logging.getLogger("test-control")
+log.setLevel(logging.CRITICAL)
 
 
 class FakeClient:

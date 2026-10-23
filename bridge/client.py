@@ -5,11 +5,28 @@ fall back to direct database access.
 """
 
 import json
+import os
 import urllib.error
 import urllib.request
 
 API_PORT = 8471
 _TIMEOUT = 3
+_TOKEN = None
+
+
+def _token():
+    """Bearer token for remote daemon calls; loopback ignores it."""
+    global _TOKEN
+    if _TOKEN is None:
+        token = os.environ.get("WALK_TO_MORDOR_TOKEN", "").strip()
+        if not token:
+            try:
+                from bridge.auth import current_token
+                token = current_token() or ""
+            except Exception:  # noqa: BLE001
+                token = ""
+        _TOKEN = token
+    return _TOKEN
 
 
 def _wsl_host_ip():
@@ -38,10 +55,13 @@ def _api_bases():
 def _request(method: str, path: str, payload=None):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     last_error = None
+    token = _token()
     for base in _api_bases():
         req = urllib.request.Request(base + path, data=data, method=method)
         if data:
             req.add_header("Content-Type", "application/json")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
         try:
             with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
                 return json.loads(resp.read() or b"{}")

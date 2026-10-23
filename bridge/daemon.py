@@ -40,6 +40,7 @@ from bridge.store import repo_root  # noqa: E402
 
 from bleak import BleakClient  # noqa: E402
 
+from bridge import auth  # noqa: E402
 from bridge.stats import STALE_AFTER_S, snapshot_from_db  # noqa: E402
 from bridge.store import data_dir, open_db, queue_command_row  # noqa: E402
 from bridge.version import __version__  # noqa: E402
@@ -352,6 +353,19 @@ class _ApiHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # quiet
         pass
 
+    def _require_auth(self) -> bool:
+        ip = self.client_address[0] if self.client_address else None
+        if auth.authorized(self.headers, ip):
+            return True
+        log.warning("API: rejected unauthenticated %s %s from %s",
+                    self.command, self.path, ip)
+        self._send_json(
+            {"error": "unauthorized: send Authorization: Bearer <token>"
+                      f" (token file: {auth.token_path()})"},
+            401,
+        )
+        return False
+
     def _serve_repo_file(self, rel: str, content_type: str):
         body = (repo_root() / rel).read_bytes()
         self.send_response(200)
@@ -371,6 +385,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if not self._require_auth():
+            return
         try:
             parsed = urlparse(self.path)
             path = parsed.path
@@ -509,6 +525,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def do_POST(self):
+        if not self._require_auth():
+            return
         try:
             path = urlparse(self.path).path
             if path == "/api/encounters/dismiss":
@@ -576,6 +594,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def do_DELETE(self):
+        if not self._require_auth():
+            return
         try:
             parsed = urlparse(self.path)
             if parsed.path != "/api/commands":
@@ -636,6 +656,11 @@ async def run() -> None:
     _ApiHandler.engine = engine
     log.info("daemon started, version=%s pid=%d db=%s",
              __version__, os.getpid(), ddir / "walks.db")
+    if auth.ensure_token():
+        log.info("API token ready at %s (loopback is exempt; remote"
+                 " callers must send it)", auth.token_path())
+    else:
+        log.warning("could not create API token; remote API calls are allowed")
 
     try:
         api_server = _make_api_server()
