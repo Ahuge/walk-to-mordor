@@ -17,16 +17,20 @@ _TOKEN = None
 def _token():
     """Bearer token for remote daemon calls; loopback ignores it."""
     global _TOKEN
-    if _TOKEN is None:
-        token = os.environ.get("WALK_TO_MORDOR_TOKEN", "").strip()
-        if not token:
-            try:
-                from bridge.auth import current_token
-                token = current_token() or ""
-            except Exception:  # noqa: BLE001
-                token = ""
+    if _TOKEN:
+        return _TOKEN
+    token = os.environ.get("WALK_TO_MORDOR_TOKEN", "").strip()
+    if not token:
+        try:
+            from bridge.auth import current_token
+            token = current_token() or ""
+        except Exception:  # noqa: BLE001
+            token = ""
+    # Cache only a real token: the daemon may create the file after the
+    # first request, and a long-running --watch process must pick it up.
+    if token:
         _TOKEN = token
-    return _TOKEN
+    return token
 
 
 def _wsl_host_ip():

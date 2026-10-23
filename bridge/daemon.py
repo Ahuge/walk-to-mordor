@@ -167,6 +167,9 @@ class MarchTracker:
             self._prev = {k: row.get(k)
                           for k in ("distance_m", "calories", "steps")}
             log.info("march started")
+            # Publish immediately so rebuild.py doesn't mistake this fresh
+            # march for a crashed one before the first 15s refresh.
+            self._publish_open(now)
             return
         # in a march: track stats, watch for the belt stopping
         self.last = row
@@ -298,6 +301,16 @@ async def command_worker(controller: TreadmillController,
                 continue
             finish_command(db, lock, cmd_id,
                            "done" if ok else "error", {"ok": ok})
+        except asyncio.CancelledError:
+            # Link dropped (or daemon stopping) mid-command: put it back so
+            # the next connection can retry instead of leaving it 'running'.
+            log.info("command %d (%s) interrupted; re-queuing", cmd_id, op)
+            try:
+                finish_command(db, lock, cmd_id, "pending",
+                               {"ok": False, "reason": "link lost; retrying"})
+            except Exception:  # noqa: BLE001
+                log.exception("command %d: could not re-queue", cmd_id)
+            raise
         except Exception as e:  # noqa: BLE001
             log.exception("command %d (%s) failed", cmd_id, op)
             try:
@@ -540,14 +553,12 @@ class _ApiHandler(BaseHTTPRequestHandler):
         if not self._require_auth():
             return
         path = urlparse(self.path).path
-        # Requiring JSON forces a CORS preflight for cross-origin browsers,
-        # which this server never approves.
-        if path in ("/api/commands", "/api/encounters/respond",
-                    "/api/encounters/trigger"):
-            ctype = (self.headers.get("Content-Type") or "").split(";")[0]
-            if ctype.strip().lower() != "application/json":
-                return self._send_json(
-                    {"error": "Content-Type must be application/json"}, 415)
+        # Requiring JSON forces a CORS preflight for every cross-origin
+        # POST; this server never approves one.
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0]
+        if ctype.strip().lower() != "application/json":
+            return self._send_json(
+                {"error": "Content-Type must be application/json"}, 415)
         try:
             if path == "/api/encounters/dismiss":
                 eng = type(self).engine
@@ -680,7 +691,8 @@ async def run() -> None:
         log.info("API token ready at %s (loopback is exempt; remote"
                  " callers must send it)", auth.token_path())
     else:
-        log.warning("could not create API token; remote API calls are allowed")
+        log.warning("could not create API token; remote API calls will be"
+                    " rejected (loopback still works)")
 
     try:
         api_server = _make_api_server()
@@ -726,9 +738,7 @@ async def run() -> None:
         log.info("pad found: %s (%s)", name, device.address)
         try:
             async with BleakClient(device) as client:
-                failures = 0
                 _ApiHandler.ble_state["connected"] = True
-                _ApiHandler.ble_state["consecutive_failures"] = 0
                 _ApiHandler.ble_state["last_error"] = None
                 log.info("connected")
                 state = {"row": {}}
@@ -743,35 +753,58 @@ async def run() -> None:
                                 " belt commands will error")
 
                 last_notify = time.monotonic()
+                loop = asyncio.get_running_loop()
+                # bleak may invoke notifications on a worker thread; all
+                # MarchTracker/DB state changes must stay on the event loop.
+                conn = {"active": True}
+
+                def handle_notify(data: bytes) -> None:
+                    nonlocal failures
+                    if not conn["active"] or stop_requested.is_set():
+                        return
+                    try:
+                        ts = datetime.now(timezone.utc).isoformat(
+                            timespec="seconds")
+                        row = parse_treadmill_data(data)
+                        failures = 0
+                        _ApiHandler.ble_state["consecutive_failures"] = 0
+                        _ApiHandler.ble_state["last_error"] = None
+                        _ApiHandler.ble_state["last_reading_ts"] = ts
+                        with lock:
+                            db.execute(
+                                "INSERT OR IGNORE INTO readings"
+                                " (ts, speed_kmh, distance_m, incline_pct,"
+                                " calories, elapsed_s, steps)"
+                                " VALUES (?,?,?,?,?,?,?)",
+                                (ts, row.get("speed_kmh"),
+                                 row.get("distance_m"),
+                                 row.get("incline_pct"), row.get("calories"),
+                                 row.get("elapsed_s"), row.get("steps")),
+                            )
+                            db.commit()
+                        state["row"] = row
+                        tracker.reading(ts, row)
+                        # Encounters need total journey km + fraction.
+                        try:
+                            from bridge.stats import (march_stats, route_position,
+                                                      load_route)
+                            _, total_m, _, _, _ = march_stats(db)
+                            route = load_route()
+                            _, _, journey_frac = route_position(route, total_m)
+                            engine.on_reading(ts, row, total_m / 1000.0,
+                                              journey_frac)
+                        except Exception:
+                            log.exception("encounter on_reading failed")
+                    except Exception:
+                        log.exception("failed to handle treadmill notification")
 
                 def on_notify(_sender, data: bytearray):
                     nonlocal last_notify
                     last_notify = time.monotonic()
-                    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                    row = parse_treadmill_data(bytes(data))
-                    _ApiHandler.ble_state["last_reading_ts"] = ts
-                    with lock:
-                        db.execute(
-                            "INSERT OR IGNORE INTO readings"
-                            " (ts, speed_kmh, distance_m, incline_pct,"
-                            " calories, elapsed_s, steps)"
-                            " VALUES (?,?,?,?,?,?,?)",
-                            (ts, row.get("speed_kmh"), row.get("distance_m"),
-                             row.get("incline_pct"), row.get("calories"),
-                             row.get("elapsed_s"), row.get("steps")),
-                        )
-                        db.commit()
-                    state["row"] = row
-                    tracker.reading(ts, row)
-                    # Encounter triggers (needs total journey km + fraction)
                     try:
-                        from bridge.stats import march_stats, route_position, load_route
-                        _, total_m, _, _, _ = march_stats(db)
-                        route = load_route()
-                        _, _, journey_frac = route_position(route, total_m)
-                        engine.on_reading(ts, row, total_m / 1000.0, journey_frac)
-                    except Exception:
-                        log.exception("encounter on_reading failed")
+                        loop.call_soon_threadsafe(handle_notify, bytes(data))
+                    except RuntimeError:
+                        pass  # loop is shutting down
 
                 await client.start_notify(TREADMILL_DATA_UUID, on_notify)
                 last_notify = time.monotonic()
@@ -784,9 +817,12 @@ async def run() -> None:
                                    " dropping the link to reconnect")
                             log.warning(msg)
                             _ApiHandler.ble_state["last_error"] = msg
+                            failures += 1
+                            _ApiHandler.ble_state["consecutive_failures"] = failures
                             break
                         await asyncio.sleep(1)
                 finally:
+                    conn["active"] = False
                     worker.cancel()
                     try:
                         await worker
@@ -799,6 +835,9 @@ async def run() -> None:
                             pass
                 if not client.is_connected:
                     log.info("disconnected")
+                    if not stop_requested.is_set():
+                        failures += 1
+                        _ApiHandler.ble_state["consecutive_failures"] = failures
                 _ApiHandler.ble_state["connected"] = False
         except Exception as e:  # noqa: BLE001
             failures += 1
@@ -825,11 +864,13 @@ async def run() -> None:
                     log.warning("link lost mid-march; ending at last motion")
                 tracker.finish(end)
         delay = (min(MAX_RECONNECT_BACKOFF_S,
-                     RECONNECT_BACKOFF_S * (2 ** min(failures, 4)))
+                     RECONNECT_BACKOFF_S * (2 ** min(failures - 1, 4)))
                  if failures else RECONNECT_BACKOFF_S)
         await sleep_or_stop(delay)
 
     tracker.finish(tracker.last_motion or datetime.now(timezone.utc))
+    api_server.shutdown()
+    api_thread.join(timeout=2)
     db.close()
     instance_lock.close()
     log.info("daemon stopped")

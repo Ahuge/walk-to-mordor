@@ -29,7 +29,9 @@ def add_reading(db, when, speed):
 
 class TestLiveStatus(unittest.TestCase):
     def test_no_readings(self):
-        text, walking, speed, age = live_status(make_db())
+        db = make_db()
+        self.addCleanup(db.close)
+        text, walking, speed, age = live_status(db)
         self.assertEqual(text, "no data yet")
         self.assertFalse(walking)
         self.assertEqual(speed, 0.0)
@@ -37,6 +39,7 @@ class TestLiveStatus(unittest.TestCase):
 
     def test_fresh_walking(self):
         db = make_db()
+        self.addCleanup(db.close)
         add_reading(db, datetime.now(timezone.utc), 1.4)
         text, walking, speed, age = live_status(db)
         self.assertTrue(walking)
@@ -46,6 +49,7 @@ class TestLiveStatus(unittest.TestCase):
 
     def test_fresh_idle(self):
         db = make_db()
+        self.addCleanup(db.close)
         add_reading(db, datetime.now(timezone.utc), 0.0)
         text, walking, speed, age = live_status(db)
         self.assertFalse(walking)
@@ -54,6 +58,7 @@ class TestLiveStatus(unittest.TestCase):
 
     def test_stale_reading_is_no_signal_not_idle(self):
         db = make_db()
+        self.addCleanup(db.close)
         add_reading(db, datetime.now(timezone.utc) - timedelta(seconds=300), 1.4)
         text, walking, speed, age = live_status(db)
         self.assertFalse(walking)
@@ -63,6 +68,7 @@ class TestLiveStatus(unittest.TestCase):
 
     def test_stale_zero_speed_is_also_no_signal(self):
         db = make_db()
+        self.addCleanup(db.close)
         add_reading(db, datetime.now(timezone.utc) - timedelta(seconds=300), 0.0)
         text, walking, _speed, _age = live_status(db)
         self.assertFalse(walking)
