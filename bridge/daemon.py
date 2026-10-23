@@ -62,6 +62,7 @@ NOTIFY_TIMEOUT_S = 10      # no unsolicited data this long -> drop the link
 RECONNECT_BACKOFF_S = 5
 MAX_RECONNECT_BACKOFF_S = 60
 CONNECT_ERROR_LOG_EVERY = 20
+HEARTBEAT_INTERVAL_S = 5
 
 log = logging.getLogger("walk-to-mordor")
 stop_requested = threading.Event()
@@ -346,6 +347,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
     """
 
     server_version = "WalkToMordor/1"
+    # Bound how long shutdown waits for an in-flight request to finish.
+    timeout = 10
     # Set by run(): the daemon's shared DB connection and lock. The handler
     # writes through these directly — never via control.queue_command, which
     # would POST back to this same server (infinite regress).
@@ -502,7 +505,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"encounters": eng.list_all() if eng else []})
             elif path == "/api/encounters/pending":
                 eng = type(self).engine
-                unlock_id = eng.check_pending_unlock() if eng else None
+                # Read-only: the dashboard POSTs /trigger to consume it.
+                unlock_id = eng.peek_pending_unlock() if eng else None
                 self._send_json({"unlock_id": unlock_id})
             elif path == "/api/pois":
                 eng = type(self).engine
@@ -642,13 +646,30 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
 
+def _start_heartbeat(path: Path) -> None:
+    """Publish liveness so tools (rebuild) can tell a live daemon from a
+    stale open_march marker, even during a long reconnect backoff."""
+    def write() -> None:
+        try:
+            path.write_text(f"{time.time():.3f}", encoding="utf-8")
+        except OSError:
+            pass
+
+    def beat() -> None:
+        while not stop_requested.wait(HEARTBEAT_INTERVAL_S):
+            write()
+
+    write()
+    threading.Thread(target=beat, name="heartbeat", daemon=True).start()
+
+
 def _make_api_server() -> ThreadingHTTPServer:
     # 0.0.0.0 so WSL2 can reach it via the host IP (Windows localhost
     # forwarding is unreliable). Home-LAN only in practice; the port is
     # arbitrary and the API is belt controls, so keep it firewalled.
-    server = ThreadingHTTPServer(("0.0.0.0", API_PORT), _ApiHandler)
-    server.daemon_threads = True
-    return server
+    # Non-daemon request threads: server_close() joins them, so db.close()
+    # can't run while a handler is still using the connection.
+    return ThreadingHTTPServer(("0.0.0.0", API_PORT), _ApiHandler)
 
 
 def _serve_api(server: ThreadingHTTPServer) -> None:
@@ -667,6 +688,7 @@ async def run() -> None:
     if instance_lock is None:
         log.error("another daemon already holds %s; exiting", ddir / "daemon.lock")
         return
+    _start_heartbeat(ddir / "daemon.heartbeat")
     # check_same_thread=False: bleak may invoke notify callbacks off the
     # event-loop thread on some backends; all writes go through the lock.
     lock = threading.Lock()
@@ -870,9 +892,13 @@ async def run() -> None:
 
     tracker.finish(tracker.last_motion or datetime.now(timezone.utc))
     api_server.shutdown()
-    api_thread.join(timeout=2)
+    api_thread.join()
     db.close()
     instance_lock.close()
+    try:
+        (ddir / "daemon.heartbeat").unlink()
+    except OSError:
+        pass
     log.info("daemon stopped")
 
 
