@@ -575,7 +575,7 @@ function showWidgetEncounter(enc) {
     }
   } else if (enc.meta.challenge_type) {
     mkBtn('Defer', async () => {
-      await fetch('/api/encounters/defer', {method: 'POST'}).catch(() => {});
+      await fetch('/api/encounters/defer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
       hideWidgetEncounter();
       lastEncounterId = null;
     });
@@ -695,7 +695,7 @@ function showEncounter(enc) {
     deferBtn.textContent = 'Defer (in a meeting)';
     deferBtn.style.cssText = 'background:#4a4234;color:#f3e9d2;border:none;border-radius:6px;padding:8px 16px;margin:4px;cursor:pointer';
     deferBtn.onclick = async () => {
-      await fetch('/api/encounters/defer', {method: 'POST'}).catch(() => {});
+      await fetch('/api/encounters/defer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
       hideEncounter();
       lastEncounterId = null;
     };
@@ -724,12 +724,12 @@ async function checkPendingUnlock() {
   }
 }
 document.getElementById('enc-dismiss').onclick = async () => {
-  await fetch('/api/encounters/complete', {method: 'POST'}).catch(() => {});
+  await fetch('/api/encounters/complete', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
   hideEncounter();
   lastEncounterId = null;
 };
 document.getElementById('enc-backdrop').onclick = async () => {
-  await fetch('/api/encounters/dismiss', {method: 'POST'}).catch(() => {});
+  await fetch('/api/encounters/dismiss', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
   hideEncounter();
   lastEncounterId = null;
 };

@@ -36,6 +36,9 @@ class TestAuth(unittest.TestCase):
         self.assertTrue(auth.authorized({}, "127.0.0.42"))
         self.assertTrue(auth.authorized({}, "::1"))
 
+    def test_remote_fails_closed_without_a_token(self):
+        self.assertFalse(auth.authorized({}, "192.168.1.10"))
+
     def test_remote_requires_bearer_token(self):
         token = auth.ensure_token()
         self.assertFalse(auth.authorized({}, "192.168.1.10"))

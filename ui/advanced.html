@@ -103,7 +103,7 @@ async function triggerEncounter(id) {
 }
 async function resetEncounters() {
   if (!confirm('Reset all encounter state?')) return;
-  await fetch('/api/encounters/reset', {method: 'POST'});
+  await fetch('/api/encounters/reset', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
   loadEncounters();
 }
 tick(); setInterval(tick, 5000);

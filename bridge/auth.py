@@ -64,12 +64,17 @@ def is_loopback(address: Optional[str]) -> bool:
 
 
 def authorized(headers: Mapping[str, str], client_ip: Optional[str]) -> bool:
-    """True when the caller may use the API."""
+    """True when the caller may use the API.
+
+    Remote callers fail closed: if the daemon could not create/read its
+    token, they are rejected rather than silently allowed to drive the
+    belt.
+    """
     if is_loopback(client_ip):
         return True
     expected = current_token()
     if not expected:
-        return True  # no token file: keep the daemon usable
+        return False
     supplied = headers.get("Authorization", "")
     scheme, _, value = supplied.partition(" ")
     if scheme.lower() == "bearer" and value.strip():
