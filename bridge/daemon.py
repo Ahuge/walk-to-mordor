@@ -20,10 +20,12 @@ Usage:
 import asyncio
 import json
 import logging
+import os
 import signal
 import sqlite3
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
@@ -38,8 +40,10 @@ from bridge.store import repo_root  # noqa: E402
 
 from bleak import BleakClient  # noqa: E402
 
-from bridge.stats import snapshot_from_db  # noqa: E402
+from bridge import auth  # noqa: E402
+from bridge.stats import STALE_AFTER_S, snapshot_from_db  # noqa: E402
 from bridge.store import data_dir, open_db, queue_command_row  # noqa: E402
+from bridge.version import __version__  # noqa: E402
 from treadmill.control import (  # noqa: E402
     COMMAND_TTL_S,
     CONTROL_POINT_UUID,
@@ -54,20 +58,65 @@ from treadmill.reader import (  # noqa: E402
 SCAN_PAUSE_S = 15          # wait between scans when the pad isn't around
 MARCH_IDLE_TIMEOUT_S = 60  # belt stopped this long -> march is over
 SPEED_THRESHOLD_KMH = 0.05
+NOTIFY_TIMEOUT_S = 10      # no unsolicited data this long -> drop the link
+RECONNECT_BACKOFF_S = 5
+MAX_RECONNECT_BACKOFF_S = 60
+CONNECT_ERROR_LOG_EVERY = 20
+HEARTBEAT_INTERVAL_S = 5
 
 log = logging.getLogger("walk-to-mordor")
 stop_requested = threading.Event()
 
 
 def setup_logging(log_path: Path) -> None:
+    if log.handlers:  # idempotent: main() and run() may both call this
+        return
     log.setLevel(logging.INFO)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     fh = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=3)
     fh.setFormatter(fmt)
     log.addHandler(fh)
-    ch = logging.StreamHandler()  # harmless under pythonw (no console)
-    ch.setFormatter(fmt)
-    log.addHandler(ch)
+    # pythonw has no stderr; don't add a handler that would fail on emit.
+    if sys.stderr is not None:
+        ch = logging.StreamHandler()
+        ch.setFormatter(fmt)
+        log.addHandler(ch)
+
+
+def acquire_instance_lock(path: Path):
+    """Hold an exclusive OS lock for the daemon's lifetime.
+
+    Returns the open file handle, or None if another daemon owns it. The
+    OS releases the lock automatically if the process crashes, so a stale
+    lock file can never wedge startup.
+    """
+    try:
+        f = open(path, "a+")
+    except OSError:
+        return None
+    try:
+        if f.tell() == 0:
+            f.write(" ")
+            f.flush()
+        f.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    f.seek(0)
+    f.truncate()
+    f.write(str(os.getpid()))
+    f.flush()
+    return f
+
+
+def short_error(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"[:300]
 
 
 class MarchTracker:
@@ -119,6 +168,9 @@ class MarchTracker:
             self._prev = {k: row.get(k)
                           for k in ("distance_m", "calories", "steps")}
             log.info("march started")
+            # Publish immediately so rebuild.py doesn't mistake this fresh
+            # march for a crashed one before the first 15s refresh.
+            self._publish_open(now)
             return
         # in a march: track stats, watch for the belt stopping
         self.last = row
@@ -250,6 +302,16 @@ async def command_worker(controller: TreadmillController,
                 continue
             finish_command(db, lock, cmd_id,
                            "done" if ok else "error", {"ok": ok})
+        except asyncio.CancelledError:
+            # Link dropped (or daemon stopping) mid-command: put it back so
+            # the next connection can retry instead of leaving it 'running'.
+            log.info("command %d (%s) interrupted; re-queuing", cmd_id, op)
+            try:
+                finish_command(db, lock, cmd_id, "pending",
+                               {"ok": False, "reason": "link lost; retrying"})
+            except Exception:  # noqa: BLE001
+                log.exception("command %d: could not re-queue", cmd_id)
+            raise
         except Exception as e:  # noqa: BLE001
             log.exception("command %d (%s) failed", cmd_id, op)
             try:
@@ -285,6 +347,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
     """
 
     server_version = "WalkToMordor/1"
+    # Bound how long shutdown waits for an in-flight request to finish.
+    timeout = 10
     # Set by run(): the daemon's shared DB connection and lock. The handler
     # writes through these directly — never via control.queue_command, which
     # would POST back to this same server (infinite regress).
@@ -297,12 +361,38 @@ class _ApiHandler(BaseHTTPRequestHandler):
         "device_address": None,
         "last_error": None,
         "last_reading_ts": None,
+        "consecutive_failures": 0,
     }
     # Encounter engine, set by run().
     engine = None
 
     def log_message(self, *args):  # quiet
         pass
+
+    def _require_auth(self) -> bool:
+        ip = self.client_address[0] if self.client_address else None
+        origin = self.headers.get("Origin")
+        allowed = {
+            f"http://127.0.0.1:{API_PORT}",
+            f"http://localhost:{API_PORT}",
+            f"http://[::1]:{API_PORT}",
+        }
+        if origin and origin.rstrip("/") not in allowed:
+            # Block a malicious page from driving the belt via localhost.
+            log.warning("API: rejected origin %s for %s %s from %s",
+                        origin, self.command, self.path, ip)
+            self._send_json({"error": "forbidden origin"}, 403)
+            return False
+        if auth.authorized(self.headers, ip):
+            return True
+        log.warning("API: rejected unauthenticated %s %s from %s",
+                    self.command, self.path, ip)
+        self._send_json(
+            {"error": "unauthorized: send Authorization: Bearer <token>"
+                      f" (token file: {auth.token_path()})"},
+            401,
+        )
+        return False
 
     def _serve_repo_file(self, rel: str, content_type: str):
         body = (repo_root() / rel).read_bytes()
@@ -323,6 +413,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if not self._require_auth():
+            return
         try:
             parsed = urlparse(self.path)
             path = parsed.path
@@ -379,7 +471,19 @@ class _ApiHandler(BaseHTTPRequestHandler):
             if path == "/api/stats":
                 s = snapshot_from_db()
                 s["source"] = "api"
-                s["ble"] = dict(_ApiHandler.ble_state)
+                s["version"] = __version__
+                ble = dict(_ApiHandler.ble_state)
+                age = None
+                ts = ble.get("last_reading_ts")
+                if ts:
+                    try:
+                        age = (datetime.now(timezone.utc)
+                               - datetime.fromisoformat(ts)).total_seconds()
+                    except (TypeError, ValueError):
+                        age = None
+                ble["last_reading_age_s"] = round(age, 1) if age is not None else None
+                ble["stale"] = age is not None and age > STALE_AFTER_S
+                s["ble"] = ble
                 self._send_json(s)
             elif path == "/api/log":
                 try:
@@ -401,7 +505,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"encounters": eng.list_all() if eng else []})
             elif path == "/api/encounters/pending":
                 eng = type(self).engine
-                unlock_id = eng.check_pending_unlock() if eng else None
+                # Read-only: the dashboard POSTs /trigger to consume it.
+                unlock_id = eng.peek_pending_unlock() if eng else None
                 self._send_json({"unlock_id": unlock_id})
             elif path == "/api/pois":
                 eng = type(self).engine
@@ -449,8 +554,16 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def do_POST(self):
+        if not self._require_auth():
+            return
+        path = urlparse(self.path).path
+        # Requiring JSON forces a CORS preflight for every cross-origin
+        # POST; this server never approves one.
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0]
+        if ctype.strip().lower() != "application/json":
+            return self._send_json(
+                {"error": "Content-Type must be application/json"}, 415)
         try:
-            path = urlparse(self.path).path
             if path == "/api/encounters/dismiss":
                 eng = type(self).engine
                 if eng:
@@ -516,6 +629,8 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def do_DELETE(self):
+        if not self._require_auth():
+            return
         try:
             parsed = urlparse(self.path)
             if parsed.path != "/api/commands":
@@ -531,22 +646,49 @@ class _ApiHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
 
-def _serve_api_forever():
+def _start_heartbeat(path: Path) -> None:
+    """Publish liveness so tools (rebuild) can tell a live daemon from a
+    stale open_march marker, even during a long reconnect backoff."""
+    def write() -> None:
+        try:
+            path.write_text(f"{time.time():.3f}", encoding="utf-8")
+        except OSError:
+            pass
+
+    def beat() -> None:
+        while not stop_requested.wait(HEARTBEAT_INTERVAL_S):
+            write()
+
+    write()
+    threading.Thread(target=beat, name="heartbeat", daemon=True).start()
+
+
+def _make_api_server() -> ThreadingHTTPServer:
     # 0.0.0.0 so WSL2 can reach it via the host IP (Windows localhost
     # forwarding is unreliable). Home-LAN only in practice; the port is
     # arbitrary and the API is belt controls, so keep it firewalled.
-    server = ThreadingHTTPServer(("0.0.0.0", API_PORT), _ApiHandler)
-    server.daemon_threads = True
-    log.info("API listening on 0.0.0.0:%d", API_PORT)
+    # Non-daemon request threads: server_close() joins them, so db.close()
+    # can't run while a handler is still using the connection.
+    return ThreadingHTTPServer(("0.0.0.0", API_PORT), _ApiHandler)
+
+
+def _serve_api(server: ThreadingHTTPServer) -> None:
     try:
         server.serve_forever()
     except Exception:  # noqa: BLE001
         log.exception("API server error")
+    finally:
+        server.server_close()
 
 
 async def run() -> None:
     ddir = data_dir()
     setup_logging(ddir / "daemon.log")
+    instance_lock = acquire_instance_lock(ddir / "daemon.lock")
+    if instance_lock is None:
+        log.error("another daemon already holds %s; exiting", ddir / "daemon.lock")
+        return
+    _start_heartbeat(ddir / "daemon.heartbeat")
     # check_same_thread=False: bleak may invoke notify callbacks off the
     # event-loop thread on some backends; all writes go through the lock.
     lock = threading.Lock()
@@ -556,16 +698,33 @@ async def run() -> None:
     # written; re-queue it so it isn't lost.
     db.execute("UPDATE commands SET status='pending' WHERE status='running'")
     db.commit()
+    if db.execute("SELECT 1 FROM meta WHERE key='open_march'").fetchone():
+        log.warning("found an open march from a previous run; run"
+                    " `python bridge/rebuild.py --apply` to recover any"
+                    " distance captured after the crash and clear the marker")
     from bridge.encounters import EncounterEngine
     engine = EncounterEngine(db, lock, repo_root() / "packs" / "lotr")
     _ApiHandler.db = db
     _ApiHandler.lock = lock
     _ApiHandler.engine = engine
-    log.info("daemon started, db=%s", ddir / "walks.db")
+    log.info("daemon started, version=%s pid=%d db=%s",
+             __version__, os.getpid(), ddir / "walks.db")
+    if auth.ensure_token():
+        log.info("API token ready at %s (loopback is exempt; remote"
+                 " callers must send it)", auth.token_path())
+    else:
+        log.warning("could not create API token; remote API calls will be"
+                    " rejected (loopback still works)")
 
-    api_thread = threading.Thread(target=_serve_api_forever, daemon=True,
-                                  name="api")
+    try:
+        api_server = _make_api_server()
+    except OSError as e:
+        log.error("API bind failed on 0.0.0.0:%d: %s", API_PORT, e)
+        raise
+    api_thread = threading.Thread(target=_serve_api, args=(api_server,),
+                                  daemon=True, name="api")
     api_thread.start()
+    log.info("API listening on 0.0.0.0:%d", API_PORT)
 
     def on_signal(signum, frame):
         log.info("stop requested (signal %s)", signum)
@@ -574,21 +733,36 @@ async def run() -> None:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
+    failures = 0
+    scan_misses = 0
     while not stop_requested.is_set():
-        found = await find_pad("URTM", quiet=True)
+        try:
+            found = await find_pad("URTM", quiet=True)
+        except Exception as e:  # noqa: BLE001
+            log.warning("BLE scan failed: %s", short_error(e))
+            log.debug("scan failure detail", exc_info=True)
+            _ApiHandler.ble_state["last_error"] = f"scan failed: {short_error(e)}"
+            await sleep_or_stop(SCAN_PAUSE_S)
+            continue
         if found is None:
+            scan_misses += 1
             _ApiHandler.ble_state["connected"] = False
+            _ApiHandler.ble_state["last_error"] = (
+                "pad not found — power-cycle the treadmill if it stays off")
+            if scan_misses == 1 or scan_misses % 10 == 0:
+                log.info("pad not found (scan %d)", scan_misses)
             await sleep_or_stop(SCAN_PAUSE_S)
             continue
         device, name = found
+        scan_misses = 0
         _ApiHandler.ble_state["device_name"] = name
         _ApiHandler.ble_state["device_address"] = device.address
         log.info("pad found: %s (%s)", name, device.address)
         try:
             async with BleakClient(device) as client:
-                log.info("connected")
                 _ApiHandler.ble_state["connected"] = True
                 _ApiHandler.ble_state["last_error"] = None
+                log.info("connected")
                 state = {"row": {}}
                 controller = TreadmillController(
                     client,
@@ -600,40 +774,77 @@ async def run() -> None:
                     log.warning("request control failed;"
                                 " belt commands will error")
 
-                def on_notify(_sender, data: bytearray):
-                    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                    row = parse_treadmill_data(bytes(data))
-                    _ApiHandler.ble_state["last_reading_ts"] = ts
-                    with lock:
-                        db.execute(
-                            "INSERT OR IGNORE INTO readings"
-                            " (ts, speed_kmh, distance_m, incline_pct,"
-                            " calories, elapsed_s, steps)"
-                            " VALUES (?,?,?,?,?,?,?)",
-                            (ts, row.get("speed_kmh"), row.get("distance_m"),
-                             row.get("incline_pct"), row.get("calories"),
-                             row.get("elapsed_s"), row.get("steps")),
-                        )
-                        db.commit()
-                    state["row"] = row
-                    tracker.reading(ts, row)
-                    # Encounter triggers (needs total journey km + fraction)
+                last_notify = time.monotonic()
+                loop = asyncio.get_running_loop()
+                # bleak may invoke notifications on a worker thread; all
+                # MarchTracker/DB state changes must stay on the event loop.
+                conn = {"active": True}
+
+                def handle_notify(data: bytes) -> None:
+                    nonlocal failures
+                    if not conn["active"] or stop_requested.is_set():
+                        return
                     try:
-                        from bridge.stats import march_stats, route_position, load_route
-                        _, total_m, _, _, _ = march_stats(db)
-                        route = load_route()
-                        _, _, journey_frac = route_position(route, total_m)
-                        engine.on_reading(ts, row, total_m / 1000.0, journey_frac)
+                        ts = datetime.now(timezone.utc).isoformat(
+                            timespec="seconds")
+                        row = parse_treadmill_data(data)
+                        failures = 0
+                        _ApiHandler.ble_state["consecutive_failures"] = 0
+                        _ApiHandler.ble_state["last_error"] = None
+                        _ApiHandler.ble_state["last_reading_ts"] = ts
+                        with lock:
+                            db.execute(
+                                "INSERT OR IGNORE INTO readings"
+                                " (ts, speed_kmh, distance_m, incline_pct,"
+                                " calories, elapsed_s, steps)"
+                                " VALUES (?,?,?,?,?,?,?)",
+                                (ts, row.get("speed_kmh"),
+                                 row.get("distance_m"),
+                                 row.get("incline_pct"), row.get("calories"),
+                                 row.get("elapsed_s"), row.get("steps")),
+                            )
+                            db.commit()
+                        state["row"] = row
+                        tracker.reading(ts, row)
+                        # Encounters need total journey km + fraction.
+                        try:
+                            from bridge.stats import (march_stats, route_position,
+                                                      load_route)
+                            _, total_m, _, _, _ = march_stats(db)
+                            route = load_route()
+                            _, _, journey_frac = route_position(route, total_m)
+                            engine.on_reading(ts, row, total_m / 1000.0,
+                                              journey_frac)
+                        except Exception:
+                            log.exception("encounter on_reading failed")
                     except Exception:
-                        log.exception("encounter on_reading failed")
+                        log.exception("failed to handle treadmill notification")
+
+                def on_notify(_sender, data: bytearray):
+                    nonlocal last_notify
+                    last_notify = time.monotonic()
+                    try:
+                        loop.call_soon_threadsafe(handle_notify, bytes(data))
+                    except RuntimeError:
+                        pass  # loop is shutting down
 
                 await client.start_notify(TREADMILL_DATA_UUID, on_notify)
+                last_notify = time.monotonic()
                 worker = asyncio.create_task(
                     command_worker(controller, db, lock))
                 try:
                     while not stop_requested.is_set() and client.is_connected:
+                        if time.monotonic() - last_notify > NOTIFY_TIMEOUT_S:
+                            msg = (f"no treadmill data for {NOTIFY_TIMEOUT_S}s;"
+                                   " dropping the link to reconnect")
+                            log.warning(msg)
+                            _ApiHandler.ble_state["last_error"] = msg
+                            failures += 1
+                            _ApiHandler.ble_state["consecutive_failures"] = failures
+                            break
                         await asyncio.sleep(1)
                 finally:
+                    conn["active"] = False
                     worker.cancel()
                     try:
                         await worker
@@ -646,19 +857,60 @@ async def run() -> None:
                             pass
                 if not client.is_connected:
                     log.info("disconnected")
-                    _ApiHandler.ble_state["connected"] = False
-        except Exception:  # noqa: BLE001
-            log.exception("connection error")
+                    if not stop_requested.is_set():
+                        failures += 1
+                        _ApiHandler.ble_state["consecutive_failures"] = failures
+                _ApiHandler.ble_state["connected"] = False
+        except Exception as e:  # noqa: BLE001
+            failures += 1
             _ApiHandler.ble_state["connected"] = False
-            _ApiHandler.ble_state["last_error"] = "connection error (see daemon log)"
+            _ApiHandler.ble_state["consecutive_failures"] = failures
+            _ApiHandler.ble_state["last_error"] = (
+                "pad unreachable — power-cycle the treadmill if it stays off"
+                if failures >= 3 else short_error(e))
+            if failures == 1:
+                log.exception("connection error (will retry)")
+            elif failures % CONNECT_ERROR_LOG_EVERY == 0:
+                log.warning("still cannot connect (%d failures): %s",
+                            failures, short_error(e))
+            else:
+                log.debug("connection error (%d): %s", failures,
+                          short_error(e), exc_info=True)
         finally:
-            tracker.finish(datetime.now(timezone.utc))
-        await sleep_or_stop(5)
+            _ApiHandler.ble_state["connected"] = False
+            if tracker.in_march:
+                end = tracker.last_motion or datetime.now(timezone.utc)
+                if stop_requested.is_set():
+                    log.info("daemon stopping mid-march; ending at last motion")
+                else:
+                    log.warning("link lost mid-march; ending at last motion")
+                tracker.finish(end)
+        delay = (min(MAX_RECONNECT_BACKOFF_S,
+                     RECONNECT_BACKOFF_S * (2 ** min(failures - 1, 4)))
+                 if failures else RECONNECT_BACKOFF_S)
+        await sleep_or_stop(delay)
 
-    tracker.finish(datetime.now(timezone.utc))
+    tracker.finish(tracker.last_motion or datetime.now(timezone.utc))
+    api_server.shutdown()
+    api_thread.join()
     db.close()
+    instance_lock.close()
+    try:
+        (ddir / "daemon.heartbeat").unlink()
+    except OSError:
+        pass
     log.info("daemon stopped")
 
 
+def main() -> None:
+    ddir = data_dir()
+    setup_logging(ddir / "daemon.log")
+    try:
+        asyncio.run(run())
+    except Exception:
+        log.exception("daemon crashed")
+        raise
+
+
 if __name__ == "__main__":
-    asyncio.run(run())
+    main()

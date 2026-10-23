@@ -397,6 +397,8 @@ class EncounterEngine:
         """Force-activate an encounter (test mode). Returns success."""
         if eid not in self.encounters:
             return False
+        if getattr(self, "_pending_unlock", None) == eid:
+            self._pending_unlock = None
         if self.active_id:
             self.dismiss_active()
         # Reset to locked so it can trigger, then activate
@@ -490,12 +492,14 @@ class EncounterEngine:
                         "unlock_id": unlock_id}
         return None
 
-    def check_pending_unlock(self) -> str | None:
-        """Called by dashboard poll. Returns encounter ID to auto-trigger,
-        or None. Clears the pending unlock."""
+    def peek_pending_unlock(self) -> str | None:
+        """Return the queued unlock ID without consuming it (safe for GET)."""
         unlock_id = getattr(self, "_pending_unlock", None)
+        return unlock_id if unlock_id in self.encounters else None
+
+    def check_pending_unlock(self) -> str | None:
+        """Return and consume the pending unlock (for callers that trigger)."""
+        unlock_id = self.peek_pending_unlock()
         if unlock_id:
             self._pending_unlock = None
-            if unlock_id in self.encounters:
-                return unlock_id
-        return None
+        return unlock_id

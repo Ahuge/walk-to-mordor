@@ -185,11 +185,23 @@
 const YTOP = 4334;
 let map, journey, cumPx, totalPx, token, fogLayers, fogHalos, lastPos = null, lastSpeed = 0;
 let routeLegs = [], lastTodaySteps = 0, followToken = false, widgetInit = false;
+let lastStats = null, lastStatusKind = 'idle';
 
 function fmtEta(h) {
   if (!isFinite(h) || h < 0) return '—';
   if (h < 1.5) return `${Math.round(h * 60)} min`;
   return `${h < 10 ? h.toFixed(1) : Math.round(h)} h`;
+}
+
+function statusLabel(s) {
+  const spd = (s.speed_kmh || 0).toFixed(1);
+  const kind = s.status_kind || (s.walking ? 'walking' : 'idle');
+  if (kind === 'no_data') return 'No data yet';
+  if (kind === 'stale') {
+    return (s.speed_kmh || 0) > 0.05
+      ? `No signal — last ${spd} km/h` : 'No signal';
+  }
+  return s.walking ? `Walking @ ${spd} km/h` : 'At rest';
 }
 
 // Widget mode: narrow viewport (e.g. a 300x275 window) or ?widget=1 —
@@ -390,6 +402,8 @@ async function addOverlays() {
 async function tick() {
   const s = await fetch('/api/stats').then(r => r.json()).catch(() => null);
   if (!s || s.error || typeof s.journey_frac !== 'number') return;
+  lastStats = s;
+  lastStatusKind = s.status_kind || (s.walking ? 'walking' : 'idle');
   lastSpeed = s.speed_kmh || 0;
   const pos = pointAt(s.journey_frac * totalPx);
   const moved = !lastPos || pos[0] !== lastPos[0] || pos[1] !== lastPos[1];
@@ -426,7 +440,7 @@ async function tick() {
     if (el) el.textContent = txt;
   };
   const spd = (s.speed_kmh || 0).toFixed(1);
-  setText('status-line', s.walking ? `Walking @ ${spd} km/h` : 'At rest');
+  setText('status-line', statusLabel(s));
   setText('leg-line', `Leg ${s.leg_index + 1}/${s.leg_count} — ${s.leg_name}`);
   const legBar = document.getElementById('leg-bar');
   if (legBar) legBar.style.width = `${(s.leg_frac * 100).toFixed(0)}%`;
@@ -453,17 +467,22 @@ async function tick() {
     `Today ${s.today_km.toFixed(1)} km · Total ${s.total_km.toFixed(1)} km${streak}`);
   const ms = document.getElementById('mini-status');
   if (ms) ms.textContent =
-    `${s.walking ? `Walking ${spd} km/h` : 'At rest'} · ` +
+    `${statusLabel(s)} · ` +
     `Leg ${s.leg_index + 1}/${s.leg_count} · ${s.today_km.toFixed(1)} km today`;
   // Advanced: BLE connection state (fullscreen only).
   if (s.ble) {
     const b = s.ble;
-    const dot = b.connected ? '🟢' : '🔴';
+    const stale = b.last_reading_age_s != null && b.last_reading_age_s > 10;
+    const dot = b.connected && !stale ? '🟢' : (b.connected ? '🟠' : '🔴');
+    const state = b.connected
+      ? (stale ? 'Connected, no data' : 'Connected') : 'Disconnected';
     const bleEl = document.getElementById('ble-status');
     if (bleEl) bleEl.innerHTML =
-      `${dot} ${b.connected ? 'Connected' : 'Disconnected'}` +
+      `${dot} ${state}` +
       (b.device_name ? ` · ${b.device_name} (${b.device_address || '?'})` : '') +
       `<br>Last reading: ${b.last_reading_ts || 'none yet'}` +
+      (b.last_reading_age_s != null ? ` (${Math.round(b.last_reading_age_s)}s ago)` : '') +
+      (b.consecutive_failures ? `<br>Connect failures: ${b.consecutive_failures}` : '') +
       (b.last_error ? `<br><span style="color:#e08080">${b.last_error}</span>` : '');
   }
   lastWalking = !!s.walking;
@@ -556,7 +575,7 @@ function showWidgetEncounter(enc) {
     }
   } else if (enc.meta.challenge_type) {
     mkBtn('Defer', async () => {
-      await fetch('/api/encounters/defer', {method: 'POST'}).catch(() => {});
+      await fetch('/api/encounters/defer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
       hideWidgetEncounter();
       lastEncounterId = null;
     });
@@ -676,7 +695,7 @@ function showEncounter(enc) {
     deferBtn.textContent = 'Defer (in a meeting)';
     deferBtn.style.cssText = 'background:#4a4234;color:#f3e9d2;border:none;border-radius:6px;padding:8px 16px;margin:4px;cursor:pointer';
     deferBtn.onclick = async () => {
-      await fetch('/api/encounters/defer', {method: 'POST'}).catch(() => {});
+      await fetch('/api/encounters/defer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
       hideEncounter();
       lastEncounterId = null;
     };
@@ -705,12 +724,12 @@ async function checkPendingUnlock() {
   }
 }
 document.getElementById('enc-dismiss').onclick = async () => {
-  await fetch('/api/encounters/complete', {method: 'POST'}).catch(() => {});
+  await fetch('/api/encounters/complete', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
   hideEncounter();
   lastEncounterId = null;
 };
 document.getElementById('enc-backdrop').onclick = async () => {
-  await fetch('/api/encounters/dismiss', {method: 'POST'}).catch(() => {});
+  await fetch('/api/encounters/dismiss', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {});
   hideEncounter();
   lastEncounterId = null;
 };
@@ -768,6 +787,10 @@ function renderStepsGraph(marches) {
 }
 
 async function cmd(op, args = {}) {
+  const disconnected = lastStats && lastStats.ble && !lastStats.ble.connected;
+  if (disconnected || lastStatusKind === 'stale') {
+    toast('No treadmill signal — command queued until it reconnects');
+  }
   try {
     const r = await fetch('/api/commands', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -810,18 +833,28 @@ function inlineConfirm(btn, label, action) {
     }, 3000);
   }
 }
+function startAt(kmh) {
+  (async () => { if (await cmd('set_speed', {kmh})) await cmd('start'); })();
+}
 function nudge(delta) {
-  const base = lastSpeed > 0.05 ? lastSpeed : 2.0;
+  // Only trust the live speed while the feed is fresh. With no signal we
+  // don't know whether the belt is moving, so ask before starting/altering.
+  const live = lastStatusKind === 'walking' && lastSpeed > 0.05;
+  const unknown = lastStatusKind === 'stale';
+  const base = (live || unknown) && lastSpeed > 0.05 ? lastSpeed : 2.0;
   const kmh = Math.max(0.5, Math.round((base + delta) * 2) / 2);
-  if (lastSpeed > 0.05) {
+  if (live) {
     cmd('set_speed', {kmh});
-  } else if (document.body.classList.contains('widget')) {
+    return;
+  }
+  const prompt = unknown
+    ? `No signal — belt state unknown. Start at ${kmh.toFixed(1)} km/h?`
+    : `Start the belt at ${kmh.toFixed(1)} km/h? Area clear, safety key in?`;
+  if (document.body.classList.contains('widget')) {
     const btn = document.getElementById(delta > 0 ? 'btn-faster' : 'btn-slower');
-    inlineConfirm(btn, `Start ${kmh.toFixed(1)}?`, () => {
-      (async () => { if (await cmd('set_speed', {kmh})) await cmd('start'); })();
-    });
-  } else if (confirm(`Start the belt at ${kmh.toFixed(1)} km/h? Area clear, safety key in?`)) {
-    (async () => { if (await cmd('set_speed', {kmh})) await cmd('start'); })();
+    inlineConfirm(btn, `Start ${kmh.toFixed(1)}?`, () => startAt(kmh));
+  } else if (confirm(prompt)) {
+    startAt(kmh);
   }
 }
 document.getElementById('btn-start').onclick = () => {
