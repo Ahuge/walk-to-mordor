@@ -14,6 +14,7 @@ Run from the repo root:  python tools/build_installer.py
 Output: dist/WalkToMordorSetup-<version>.exe
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -24,22 +25,29 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 from bridge.version import __version__  # noqa: E402
-ISCC_CANDIDATES = [
-    Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
-    Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
-]
+def _iscc_candidates() -> list[Path]:
+    out = [
+        Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
+        Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
+    ]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        # Per-user install (PrivilegesRequired=lowest works with this too).
+        out.append(Path(local) / "Programs" / "Inno Setup 6" / "ISCC.exe")
+    return out
 
 
 def find_iscc() -> Path:
-    for p in ISCC_CANDIDATES:
+    for p in _iscc_candidates():
         if p.exists():
             return p
     found = shutil.which("ISCC.exe") or shutil.which("iscc")
     if found:
         return Path(found)
     sys.exit(
-        "Inno Setup 6 not found. Install it from https://jrsoftware.org/isinfo.php\n"
-        "then re-run this script."
+        "Inno Setup 6 not found. Install it with:\n"
+        "  winget install --id JRSoftware.InnoSetup -e\n"
+        "or from https://jrsoftware.org/isinfo.php, then re-run this script."
     )
 
 
@@ -71,15 +79,25 @@ def main() -> None:
             version = sys.argv[i + 1]
     _set_version(version)
     print(f"version: {version}")
-    print("=== building daemon exe ===")
-    subprocess.run([sys.executable, "tools/build_daemon_exe.py"],
-                   cwd=REPO, check=True)
-    print("=== building widget exe ===")
-    subprocess.run([sys.executable, "tools/build_widget_exe.py"],
-                   cwd=REPO, check=True)
-    print("=== building nudge exe ===")
-    subprocess.run([sys.executable, "tools/build_nudge_exe.py"],
-                   cwd=REPO, check=True)
+    installer_only = "--installer-only" in sys.argv
+    if installer_only:
+        missing = [name for name in (
+            "WalkToMordorDaemon.exe", "WalkToMordorWidget.exe",
+            "WalkToMordorNudge.exe") if not (REPO / "dist" / name).exists()]
+        if missing:
+            sys.exit("--installer-only needs these in dist first: "
+                     + ", ".join(missing))
+        print("=== using existing exes ===")
+    else:
+        print("=== building daemon exe ===")
+        subprocess.run([sys.executable, "tools/build_daemon_exe.py"],
+                       cwd=REPO, check=True)
+        print("=== building widget exe ===")
+        subprocess.run([sys.executable, "tools/build_widget_exe.py"],
+                       cwd=REPO, check=True)
+        print("=== building nudge exe ===")
+        subprocess.run([sys.executable, "tools/build_nudge_exe.py"],
+                       cwd=REPO, check=True)
     iscc = find_iscc()
     print(f"=== building installer with {iscc} ===")
     iss_path = REPO / "installer" / "walk-to-mordor.iss"
