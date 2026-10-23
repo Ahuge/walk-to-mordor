@@ -56,6 +56,18 @@ def _create_task(name: str, target: Path, delay_s: int = 0) -> None:
     print(f"  runs: {task_run}" + (f" (delay {delay_s}s)" if delay_s else ""))
 
 
+def _stop_daemon(repo: Path) -> None:
+    """Stop any running daemon before replacing tasks (and their exes)."""
+    script = repo / "installer" / "stop_daemon.ps1"
+    if not script.exists():
+        return
+    subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+         "-File", str(script)],
+        check=False,
+    )
+
+
 def _harden_tasks(repo: Path) -> None:
     """Add restart/battery/runtime settings that schtasks cannot express."""
     script = repo / "installer" / "harden_tasks.ps1"
@@ -84,7 +96,10 @@ def _ensure_widget_exe(repo: Path) -> Path:
 
 
 def main() -> None:
+    repo = Path(__file__).resolve().parent.parent
     if "--uninstall" in sys.argv:
+        if sys.platform == "win32":
+            _stop_daemon(repo)
         for name in (TASK_NAME, WIDGET_TASK_NAME, NUDGE_TASK_NAME,
                      MINIMAP_TASK_NAME):
             subprocess.run(
@@ -93,7 +108,7 @@ def main() -> None:
         return
     if sys.platform != "win32":
         sys.exit("this installer is for Windows only")
-    repo = Path(__file__).resolve().parent.parent
+    _stop_daemon(repo)
     daemon = repo / "bridge" / "daemon.py"
     if not daemon.exists():
         sys.exit(f"daemon not found: {daemon}")

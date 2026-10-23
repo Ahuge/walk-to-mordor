@@ -13,11 +13,14 @@ function Start-OrRun($taskName, $exeName) {
     }
 }
 
-# Stop existing daemon task (if running)
-schtasks /end /tn "WalkToMordor" /f | Out-Null
-
-# Kill any running widget exes (installed or dev)
-Get-Process WalkToMordorWidget -ErrorAction SilentlyContinue | Stop-Process -Force
+# Stop the old daemon/widget, including a source-run pythonw daemon.
+$stop = Join-Path $PSScriptRoot "stop_daemon.ps1"
+if (Test-Path $stop) {
+    & $stop
+} else {
+    schtasks /end /tn "WalkToMordor" | Out-Null
+    Get-Process WalkToMordorWidget | Stop-Process -Force
+}
 
 # Start the daemon, give it 2s to come up (BLE + API), then the widget.
 Start-OrRun "WalkToMordor" "WalkToMordorDaemon.exe"

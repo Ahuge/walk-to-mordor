@@ -28,6 +28,8 @@ Source: "..\dist\WalkToMordorWidget.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorNudge.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "launch.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "harden_tasks.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "stop_daemon.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "stop_daemon.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\Walk to Mordor Dashboard"; Filename: "http://127.0.0.1:8471/"
@@ -66,6 +68,21 @@ Filename: "powershell"; \
   Flags: postinstall skipifsilent runhidden
 
 [Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  { Stop the old daemon before [Files] tries to replace its exe, otherwise
+    Windows keeps the old binary locked and the upgrade silently runs old
+    code. This also stops a source-run `pythonw bridge\daemon.py`. }
+  ExtractTemporaryFile('stop_daemon.ps1');
+  Exec('powershell.exe',
+       '-NoProfile -ExecutionPolicy Bypass -File "' +
+       ExpandConstant('{tmp}\stop_daemon.ps1') + '"',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
+
 function InitializeSetup(): Boolean;
 begin
   Result := True;
