@@ -20,6 +20,8 @@ from bridge.store import data_dir, open_db  # noqa: E402
 
 M_PER_MI = 1609.344
 REFRESH_S = 2
+STALE_AFTER_S = 10
+SPEED_THRESHOLD_KMH = 0.05
 
 
 def load_route(pack: str = "lotr") -> dict:
@@ -82,19 +84,28 @@ def march_stats(db: sqlite3.Connection):
 
 
 def live_status(db: sqlite3.Connection):
-    """Returns (text, walking_bool, speed_kmh) from the latest reading."""
+    """Returns (text, walking, speed_kmh, age_s) from the latest reading.
+
+    A stale feed is *not* the same as a stopped belt: the pad may still be
+    running after the BLE link drops. Never report "idle" from stale data.
+    age_s is None when there are no readings at all.
+    """
     row = db.execute(
         "SELECT ts, speed_kmh FROM readings ORDER BY ts DESC LIMIT 1"
     ).fetchone()
     if not row:
-        return "no data yet", False, 0.0
+        return "no data yet", False, 0.0, None
     ts, speed = row
     age = (datetime.now(timezone.utc)
            - _local(ts).astimezone(timezone.utc)).total_seconds()
     speed = speed or 0.0
-    if age < 10 and speed > 0.05:
-        return f"walking @ {speed:.1f} km/h", True, speed
-    return "idle", False, speed
+    if age >= STALE_AFTER_S:
+        if speed > SPEED_THRESHOLD_KMH:
+            return f"no signal (last {speed:.1f} km/h)", False, speed, age
+        return "no signal", False, speed, age
+    if speed > SPEED_THRESHOLD_KMH:
+        return f"walking @ {speed:.1f} km/h", True, speed, age
+    return "idle", False, speed, age
 
 
 def route_position(route: dict, total_m: float):
@@ -117,7 +128,15 @@ def snapshot_from_db() -> dict:
     try:
         route = load_route()
         today_m, total_m, streak, today_steps, _total_steps = march_stats(db)
-        status, walking, speed = live_status(db)
+        status, walking, speed, age = live_status(db)
+        if age is None:
+            status_kind = "no_data"
+        elif age >= STALE_AFTER_S:
+            status_kind = "stale"
+        elif walking:
+            status_kind = "walking"
+        else:
+            status_kind = "idle"
         i, leg, frac = route_position(route, total_m)
         legs = route["legs"]
         total_mi = sum(l["distance"] for l in legs)
@@ -141,8 +160,10 @@ def snapshot_from_db() -> dict:
             "today_steps": today_steps,
             "streak": streak,
             "status": status,
+            "status_kind": status_kind,
             "walking": walking,
             "speed_kmh": speed,
+            "reading_age_s": round(age, 1) if age is not None else None,
             "db": str(data_dir() / "walks.db"),
             "source": "db",
         }

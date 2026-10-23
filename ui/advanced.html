@@ -14,7 +14,7 @@
     padding:16px; margin-bottom:16px; }
   .row { display:flex; gap:8px; margin:6px 0; font-size:14px; }
   .label { color:#9a8c6d; min-width:140px; }
-  .ok { color:#7fc97f; } .bad { color:#e08080; }
+  .ok { color:#7fc97f; } .warn { color:#e0b060; } .bad { color:#e08080; }
   pre { background:#14120f; border:1px solid #3a352c; border-radius:6px;
     padding:12px; font-size:12px; line-height:1.5; overflow-x:auto;
     max-height:400px; overflow-y:auto; white-space:pre-wrap; }
@@ -62,13 +62,19 @@ async function tick() {
   const s = await fetch('/api/stats').then(r => r.json()).catch(() => null);
   if (!s) return;
   const b = s.ble || {};
-  const dot = b.connected ? '<span class="ok">●</span>' : '<span class="bad">●</span>';
+  const stale = b.last_reading_age_s != null && b.last_reading_age_s > 10;
+  const dot = b.connected && !stale ? '<span class="ok">●</span>'
+    : (b.connected ? '<span class="warn">●</span>' : '<span class="bad">●</span>');
+  const state = b.connected
+    ? (stale ? 'Connected, no data' : 'Connected') : 'Disconnected';
   document.getElementById('ble').innerHTML =
-    `<div class="row"><span class="label">Status</span>${dot} ${b.connected ? 'Connected' : 'Disconnected'}</div>` +
+    `<div class="row"><span class="label">Status</span>${dot} ${state}</div>` +
     `<div class="row"><span class="label">Device</span>${b.device_name || '—'} ${b.device_address ? '(' + b.device_address + ')' : ''}</div>` +
-    `<div class="row"><span class="label">Last reading</span>${b.last_reading_ts || 'none yet'}</div>` +
+    `<div class="row"><span class="label">Last reading</span>${b.last_reading_ts || 'none yet'}` +
+    (b.last_reading_age_s != null ? ` (${Math.round(b.last_reading_age_s)}s ago)` : '') + `</div>` +
+    (b.consecutive_failures ? `<div class="row"><span class="label">Connect failures</span>${b.consecutive_failures}</div>` : '') +
     (b.last_error ? `<div class="row"><span class="label">Last error</span><span class="bad">${b.last_error}</span></div>` : '') +
-    `<div class="row"><span class="label">Walking</span>${s.walking ? 'yes @ ' + (s.speed_kmh || 0).toFixed(1) + ' km/h' : 'no'}</div>`;
+    `<div class="row"><span class="label">Walking</span>${s.status || (s.walking ? 'yes' : 'no')}</div>`;
   document.getElementById('daemon').innerHTML =
     `<div class="row"><span class="label">Database</span><span style="font-size:12px">${s.db || '—'}</span></div>` +
     `<div class="row"><span class="label">Source</span>${s.source || '—'}</div>`;
