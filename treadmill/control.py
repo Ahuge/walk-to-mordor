@@ -22,9 +22,10 @@ Confirmed against the 3S GATT dump (the 5L matches the layout):
   08 01       stop                -> 80 08 01
 
 Quirks: targets sent right after start are lost (the belt spins up to
-1 km/h first) -> wait 8 s, retry until the live reading matches. A stopped
-belt accepts no targets at all -> remembered and re-sent after start.
-Start confirmation can take ~7 s -> 10 s response timeout.
+1 km/h first) -> wait for the first live movement, then retry until the
+reading matches. A stopped belt accepts no targets at all -> remembered
+and re-sent after start. Start confirmation can take ~7 s -> 10 s
+response timeout.
 """
 
 import argparse
@@ -53,7 +54,8 @@ OP_STOP = 0x08
 
 RESULT_SUCCESS = 0x01
 RESPONSE_TIMEOUT_S = 10
-SPINUP_WAIT_S = 8
+SPINUP_TIMEOUT_S = 15
+SPINUP_POLL_S = 0.25
 TARGET_RETRIES = 4
 COMMAND_TTL_S = 600  # daemon ignores commands older than this
 
@@ -66,25 +68,41 @@ class TreadmillController:
         self.get_speed = get_speed  # callable -> current belt speed, km/h
         self.log = log
         self._responses: asyncio.Queue = asyncio.Queue()
+        self._loop = None
         self.pending_speed = None
         self.pending_incline = None
+        self.min_speed = 0.5
         self.max_speed = 6.0
+        self.min_incline = 0.0
         self.max_incline = 9.0
 
     async def setup(self) -> None:
+        self._loop = asyncio.get_running_loop()
         await self.client.start_notify(CONTROL_POINT_UUID, self._on_indication)
-        for uuid, name in ((SPEED_RANGE_UUID, "speed"),
-                           (INCLINE_RANGE_UUID, "incline")):
-            try:
-                raw = await self.client.read_gatt_char(uuid)
-                if name == "speed":
-                    self.max_speed = int.from_bytes(raw[2:4], "little") / 100
-                else:
-                    self.max_incline = int.from_bytes(raw[2:4], "little", signed=True) / 10
-                self.log.info("pad reports max %s: %s", name,
-                              self.max_speed if name == "speed" else self.max_incline)
-            except Exception as e:  # noqa: BLE001
-                self.log.warning("could not read %s range: %s", name, e)
+        try:
+            raw = await self.client.read_gatt_char(SPEED_RANGE_UUID)
+            low = int.from_bytes(raw[0:2], "little") / 100
+            high = int.from_bytes(raw[2:4], "little") / 100
+            if 0 <= low < high:
+                self.min_speed, self.max_speed = low, high
+            else:
+                self.log.warning("ignoring odd speed range %s..%s", low, high)
+            self.log.info("pad reports speed range: %.1f..%.1f km/h",
+                          self.min_speed, self.max_speed)
+        except Exception as e:  # noqa: BLE001
+            self.log.warning("could not read speed range: %s", e)
+        try:
+            raw = await self.client.read_gatt_char(INCLINE_RANGE_UUID)
+            low = int.from_bytes(raw[0:2], "little", signed=True) / 10
+            high = int.from_bytes(raw[2:4], "little", signed=True) / 10
+            if low <= high:
+                self.min_incline, self.max_incline = low, high
+            else:
+                self.log.warning("ignoring odd incline range %s..%s", low, high)
+            self.log.info("pad reports incline range: %.1f..%.1f %%",
+                          self.min_incline, self.max_incline)
+        except Exception as e:  # noqa: BLE001
+            self.log.warning("could not read incline range: %s", e)
 
     async def teardown(self) -> None:
         try:
@@ -93,7 +111,18 @@ class TreadmillController:
             pass
 
     def _on_indication(self, _sender, data: bytearray) -> None:
-        self._responses.put_nowait(bytes(data))
+        # bleak may call this from a background thread; asyncio.Queue is only
+        # safe to touch from the event loop.
+        data = bytes(data)
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            self.log.warning("control indication before setup; dropping %s",
+                             data.hex())
+            return
+        try:
+            loop.call_soon_threadsafe(self._responses.put_nowait, data)
+        except RuntimeError:
+            self.log.warning("event loop closed; dropping control indication")
 
     async def _command(self, payload: bytes, expect_op: int) -> bool:
         while not self._responses.empty():
@@ -119,11 +148,22 @@ class TreadmillController:
                                    OP_REQUEST_CONTROL)
 
     async def start(self) -> bool:
-        ok = await self._command(bytes([OP_START]), OP_START)
-        # Belt spins up to 1 km/h first; targets sent now would be lost.
-        await asyncio.sleep(SPINUP_WAIT_S)
+        if not await self._command(bytes([OP_START]), OP_START):
+            return False
+        # Belt spins up to 1 km/h first; targets sent before movement are lost.
+        if not await self._wait_for_motion():
+            self.log.warning("belt did not report motion after start")
+            return False
         await self._apply_pending()
-        return ok
+        return True
+
+    async def _wait_for_motion(self) -> bool:
+        deadline = time.monotonic() + SPINUP_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if (self.get_speed() or 0.0) > 0.05:
+                return True
+            await asyncio.sleep(SPINUP_POLL_S)
+        return False
 
     async def stop(self) -> bool:
         self.pending_speed = None
@@ -131,7 +171,8 @@ class TreadmillController:
         return await self._command(bytes([OP_STOP, 0x01]), OP_STOP)
 
     async def set_speed(self, kmh: float) -> bool:
-        kmh = max(0.5, min(self.max_speed, kmh))
+        # The pad can report a 0 minimum; 0.5 is the slowest useful belt speed.
+        kmh = max(max(self.min_speed, 0.5), min(self.max_speed, kmh))
         if (self.get_speed() or 0.0) <= 0.05:
             # A stopped belt accepts no targets; remember for after start.
             self.pending_speed = kmh
@@ -154,7 +195,7 @@ class TreadmillController:
         return False
 
     async def set_incline(self, pct: float) -> bool:
-        pct = max(0.0, min(self.max_incline, pct))
+        pct = max(self.min_incline, min(self.max_incline, pct))
         if (self.get_speed() or 0.0) <= 0.05:
             self.pending_incline = pct
             self.log.info("belt stopped; queuing incline %.0f%% for start", pct)
@@ -171,11 +212,15 @@ class TreadmillController:
         if self.pending_speed is not None:
             kmh = self.pending_speed
             self.pending_speed = None
-            await self._set_speed_now(kmh)
+            if not await self._set_speed_now(kmh):
+                self.log.warning("queued speed %.1f km/h could not be applied",
+                                 kmh)
         if self.pending_incline is not None:
             pct = self.pending_incline
             self.pending_incline = None
-            await self.set_incline(pct)
+            if not await self.set_incline(pct):
+                self.log.warning("queued incline %.1f%% could not be applied",
+                                 pct)
 
 
 # ---------------------------------------------------------------------------
