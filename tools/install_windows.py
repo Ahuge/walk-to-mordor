@@ -56,6 +56,21 @@ def _create_task(name: str, target: Path, delay_s: int = 0) -> None:
     print(f"  runs: {task_run}" + (f" (delay {delay_s}s)" if delay_s else ""))
 
 
+def _harden_tasks(repo: Path) -> None:
+    """Add restart/battery/runtime settings that schtasks cannot express."""
+    script = repo / "installer" / "harden_tasks.ps1"
+    if not script.exists():
+        return
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+         "-File", str(script)],
+        check=False,
+    )
+    if result.returncode != 0:
+        print("warning: could not harden scheduled tasks; rerun manually:")
+        print(f'  powershell -ExecutionPolicy Bypass -File "{script}"')
+
+
 def _ensure_widget_exe(repo: Path) -> Path:
     exe = repo / "dist" / "WalkToMordorWidget.exe"
     if exe.exists():
@@ -97,6 +112,7 @@ def main() -> None:
         if not minimap.exists():
             sys.exit(f"minimap not found: {minimap}")
         _create_task(MINIMAP_TASK_NAME, minimap)
+    _harden_tasks(repo)
     print("Take effect on next logon, or start now with:")
     print(f'  schtasks /run /tn "{TASK_NAME}"')
     if "--widget" in sys.argv:

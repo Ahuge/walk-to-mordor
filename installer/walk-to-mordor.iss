@@ -27,6 +27,7 @@ Source: "..\dist\WalkToMordorDaemon.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorWidget.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorNudge.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "launch.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "harden_tasks.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Walk to Mordor Dashboard"; Filename: "http://127.0.0.1:8471/"
@@ -46,6 +47,10 @@ Filename: "schtasks"; \
 Filename: "schtasks"; \
   Parameters: "/create /tn ""WalkToMordorNudge"" /tr ""\""{app}\WalkToMordorNudge.exe\"""" /sc daily /st 11:00 /rl limited /f"; \
   Flags: runhidden; StatusMsg: "Registering daily reminder…"
+; schtasks cannot set restart-on-failure or battery options; apply them now.
+Filename: "powershell"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\harden_tasks.ps1"""; \
+  Flags: runhidden; StatusMsg: "Hardening background tasks…"
 
 [UninstallRun]
 Filename: "schtasks"; Parameters: "/delete /tn ""WalkToMordor"" /f"; Flags: runhidden
