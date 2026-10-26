@@ -12,14 +12,16 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppSupportURL=https://github.com/Ahuge/walk-to-mordor
-DefaultDirName={autopf}\WalkToMordor
+DefaultDirName={localappdata}\Programs\WalkToMordor
 DefaultGroupName=Walk to Mordor
 OutputDir=..\dist
 OutputBaseFilename=WalkToMordorSetup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+; Logon tasks must be created/replaced reliably; some machines deny
+; schtasks /sc onlogon (and writes to old task files) to normal users.
+PrivilegesRequired=admin
 DisableDirPage=no
 
 [Files]
@@ -27,32 +29,26 @@ Source: "..\dist\WalkToMordorDaemon.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorWidget.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\WalkToMordorNudge.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "launch.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "register_tasks.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "harden_tasks.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "stop_daemon.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "stop_daemon.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
-Name: "{group}\Walk to Mordor Dashboard"; Filename: "http://127.0.0.1:8471/"
-Name: "{group}\Walk to Mordor Widget"; Filename: "{app}\WalkToMordorWidget.exe"
-Name: "{group}\Uninstall Walk to Mordor"; Filename: "{uninstallexe}"
+Name: "{userprograms}\Walk to Mordor\Walk to Mordor Dashboard"; Filename: "http://127.0.0.1:8471/"
+Name: "{userprograms}\Walk to Mordor\Walk to Mordor Widget"; Filename: "{app}\WalkToMordorWidget.exe"
+Name: "{userprograms}\Walk to Mordor\Uninstall Walk to Mordor"; Filename: "{uninstallexe}"
 
 [Run]
-; Register the daemon as a logon task (starts the BLE bridge + API).
-Filename: "schtasks"; \
-  Parameters: "/create /tn ""WalkToMordor"" /tr ""\""{app}\WalkToMordorDaemon.exe\"""" /sc onlogon /rl limited /f"; \
-  Flags: runhidden; StatusMsg: "Registering background service…"
-; Register the widget as a logon task with a 30s delay (daemon first).
-Filename: "schtasks"; \
-  Parameters: "/create /tn ""WalkToMordorWidget"" /tr ""\""{app}\WalkToMordorWidget.exe\"""" /sc onlogon /delay 0000:30 /rl limited /f"; \
-  Flags: runhidden; StatusMsg: "Registering widget…"
-; Daily nudge at 11am if no walk yet.
-Filename: "schtasks"; \
-  Parameters: "/create /tn ""WalkToMordorNudge"" /tr ""\""{app}\WalkToMordorNudge.exe\"""" /sc daily /st 11:00 /rl limited /f"; \
-  Flags: runhidden; StatusMsg: "Registering daily reminder…"
-; schtasks cannot set restart-on-failure or battery options; apply them now.
+; Recreate daemon/widget/nudge tasks with their installed exe paths. This
+; replaces stale source-run tasks and applies restart/battery settings.
+Filename: "powershell"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\register_tasks.ps1"""; \
+  Flags: runhidden waituntilterminated; StatusMsg: "Registering background tasks…"
+; Safety net for tasks created by older/source installs.
 Filename: "powershell"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\harden_tasks.ps1"""; \
-  Flags: runhidden; StatusMsg: "Hardening background tasks…"
+  Flags: runhidden waituntilterminated; StatusMsg: "Hardening background tasks…"
 ; Silent upgrades stop the old daemon in PrepareToInstall; restart it.
 Filename: "schtasks"; Parameters: "/run /tn ""WalkToMordor"""; \
   Flags: runhidden; Check: IsSilent
