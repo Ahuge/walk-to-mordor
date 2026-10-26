@@ -30,11 +30,13 @@ def _create_daily_task(name: str, target: Path, time: str) -> None:
     if not pythonw.exists():
         sys.exit(f"pythonw.exe not found next to {sys.executable}")
     task_run = f'"{pythonw}" "{target}"'
-    subprocess.run(
+    result = subprocess.run(
         ["schtasks", "/create", "/tn", name, "/tr", task_run,
          "/sc", "daily", "/st", time, "/rl", "limited", "/f"],
-        check=True,
     )
+    if result.returncode:
+        sys.exit("could not create the daily task; run this from an"
+                 " elevated PowerShell")
     print(f"installed: daily task '{name}' at {time}")
     print(f"  runs: {task_run}")
 
@@ -51,7 +53,10 @@ def _create_task(name: str, target: Path, delay_s: int = 0) -> None:
            "/tr", task_run, "/sc", "onlogon", "/rl", "limited", "/f"]
     if delay_s:
         cmd += ["/delay", f"0000:{delay_s:02d}"]
-    subprocess.run(cmd, check=True)
+    result = subprocess.run(cmd)
+    if result.returncode:
+        sys.exit("could not create the logon task; run this from an"
+                 " elevated PowerShell (or use the installer)")
     print(f"installed: logon task '{name}'")
     print(f"  runs: {task_run}" + (f" (delay {delay_s}s)" if delay_s else ""))
 

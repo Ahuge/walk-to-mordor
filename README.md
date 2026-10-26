@@ -31,14 +31,14 @@ Toggleable Encounters and Deaths overlays mark points of interest along the rout
 
 **Option 1: Installer** (recommended)
 
-Download `WalkToMordorSetup-*.exe` from [Releases](https://github.com/Ahuge/walk-to-mordor/releases) and run it. It installs the daemon, widget, and daily nudge, all auto-starting at login.
+Download `WalkToMordorSetup-*.exe` from [Releases](https://github.com/Ahuge/walk-to-mordor/releases) and run it. It installs the daemon, widget, and daily nudge, all auto-starting at login. The installer asks for administrator access so it can reliably register (or replace) those logon tasks.
 
 **Option 2: From source**
 
 ```powershell
 pip install bleak pywebview pyinstaller
 
-# Install the daemon + widget as logon tasks:
+# Install the daemon + widget as logon tasks (run PowerShell as admin):
 python tools/install_windows.py --widget --nudge
 
 # Or run the daemon in the foreground to test:
