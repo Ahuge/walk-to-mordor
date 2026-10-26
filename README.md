@@ -11,7 +11,7 @@ Walk in real life, travel in Middle-earth. A background daemon connects to your 
 - **Live map**: Your position on the road from Bag End to Mount Doom, with fog-of-war lifting as you walk
 - **Floating widget**: Always-on-top mini map with belt controls (Start/Stop/speed)
 - **Belt controls**: Start, stop, and adjust speed from the dashboard, widget, or CLI
-- **March tracking**: Every walk is logged with distance, duration, steps, calories, avg speed
+- **March tracking**: Every walk is logged with distance, duration, steps, calories, avg speed; missed walks can be added manually from the dashboard
 - **Daily nudge**: Windows notification if you haven't walked yet today
 - **Full installer**: One-click Inno Setup installer with auto-start on login
 
@@ -64,7 +64,7 @@ Walking pad --BLE FTMS--> Daemon --SQLite--> walks.db
 
 - **Daemon** (`bridge/daemon.py`): Auto-connects to the pad via Bluetooth FTMS, logs 1/sec readings (speed, distance, incline, calories, steps) to SQLite, serves the HTTP API and dashboard.
 - **Marches**: A march starts when the belt moves, ends after 60s idle or on disconnect. Saved to the `marches` table with full stats.
-- **API** (`127.0.0.1:8471`): `GET /api/stats`, `POST /api/commands` (start/stop/speed/incline), `GET /api/route`, `GET /api/marches`, `GET /api/log`. Loopback callers need no credentials; remote callers must send `Authorization: Bearer <token>` using the token in `%LOCALAPPDATA%\walk-to-mordor\api.token` (created at daemon startup).
+- **API** (`127.0.0.1:8471`): `GET /api/stats`, `POST /api/commands` (start/stop/speed/incline), `GET /api/route`, `GET /api/marches`, `POST /api/marches` (manual walk), `GET /api/log`. Loopback callers need no credentials; remote callers must send `Authorization: Bearer <token>` using the token in `%LOCALAPPDATA%\walk-to-mordor\api.token` (created at daemon startup).
 - **Dashboard** (`ui/dashboard.html`): Leaflet map with the journey route, live token, fog-of-war, leg progress, belt controls, march log, steps graph, and an Advanced page (`/advanced`) with BLE diagnostics.
 - **Widget** (`ui/widget.py`): Borderless always-on-top pywebview window showing the map in compact mode.
 

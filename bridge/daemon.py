@@ -42,7 +42,12 @@ from bleak import BleakClient  # noqa: E402
 
 from bridge import auth  # noqa: E402
 from bridge.stats import STALE_AFTER_S, snapshot_from_db  # noqa: E402
-from bridge.store import data_dir, open_db, queue_command_row  # noqa: E402
+from bridge.store import (  # noqa: E402
+    data_dir,
+    insert_manual_march,
+    open_db,
+    queue_command_row,
+)
 from bridge.version import __version__  # noqa: E402
 from treadmill.control import (  # noqa: E402
     COMMAND_TTL_S,
@@ -564,6 +569,58 @@ class _ApiHandler(BaseHTTPRequestHandler):
             return self._send_json(
                 {"error": "Content-Type must be application/json"}, 415)
         try:
+            if path == "/api/marches":
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b"{}")
+                except Exception:  # noqa: BLE001
+                    return self._send_json({"error": "bad json"}, 400)
+                try:
+                    raw_start = str(data.get("started_at") or "").strip()
+                    if not raw_start:
+                        raise ValueError("started_at is required")
+                    start = datetime.fromisoformat(
+                        raw_start.replace("Z", "+00:00"))
+                    if start.tzinfo is None:
+                        start = start.astimezone()  # assume local time
+                    start = start.astimezone(timezone.utc)
+                    duration_min = float(data.get("duration_min"))
+                    distance_km = float(data.get("distance_km"))
+                    if not 0 < duration_min <= 1440:
+                        raise ValueError(
+                            "duration must be between 1 minute and 24 hours")
+                    if not 0 < distance_km <= 200:
+                        raise ValueError(
+                            "distance must be between 0.01 and 200 km")
+
+                    def optional_int(key: str, maximum: int):
+                        value = data.get(key)
+                        if value is None or value == "":
+                            return None
+                        n = int(value)
+                        if n < 0 or n > maximum:
+                            raise ValueError(
+                                f"{key} must be between 0 and {maximum}")
+                        return n
+
+                    steps = optional_int("steps", 200_000)
+                    calories = optional_int("calories", 20_000)
+                    duration_s = max(1, int(round(duration_min * 60)))
+                    distance_m = max(1, int(round(distance_km * 1000)))
+                except (TypeError, ValueError) as e:
+                    return self._send_json({"error": str(e)}, 400)
+                with type(self).lock:
+                    march_id = insert_manual_march(
+                        type(self).db, start, duration_s, distance_m,
+                        calories, steps)
+                log.info("API: added manual walk id=%d %.2f km in %.0f min"
+                         " from %s", march_id, distance_km, duration_min,
+                         self.client_address[0])
+                return self._send_json({
+                    "ok": True, "id": march_id,
+                    "started_at": start.isoformat(timespec="seconds"),
+                    "duration_s": duration_s, "distance_m": distance_m,
+                }, 201)
             if path == "/api/encounters/dismiss":
                 eng = type(self).engine
                 if eng:
