@@ -16,18 +16,21 @@ Usage (run from PowerShell on the Windows side):
     python bridge/rebuild.py --apply    # actually insert the marches
 """
 
+import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bridge.store import open_db  # noqa: E402
+from bridge.store import data_dir, open_db  # noqa: E402
 
 SPEED_THRESHOLD_KMH = 0.05
 IDLE_TIMEOUT_S = 60
 OVERLAP_PAD_S = 120
 OPEN_MARCH_FRESH_S = 180
+HEARTBEAT_FRESH_S = 15
 
 
 def _parse(ts: str) -> datetime:
@@ -95,15 +98,20 @@ def main() -> None:
             "SELECT started_at, ended_at, distance_m FROM marches").fetchall()]
 
         # Is the daemon alive in a march right now? If so, the trailing
-        # segment belongs to it (covered by open_march), not to us.
+        # segment belongs to it (covered by open_march), not to us. Prefer
+        # the heartbeat: it stays fresh during reconnect backoff, unlike the
+        # open_march marker. Fall back to the marker for older daemons.
         daemon_live = False
-        row = db.execute(
-            "SELECT value FROM meta WHERE key='open_march'").fetchone()
-        if row:
-            import json
-            upd = _parse(json.loads(row[0])["updated_at"])
-            daemon_live = ((datetime.now(timezone.utc) - upd).total_seconds()
-                           < OPEN_MARCH_FRESH_S)
+        try:
+            beat = float((data_dir() / "daemon.heartbeat").read_text().strip())
+            daemon_live = (time.time() - beat) < HEARTBEAT_FRESH_S
+        except (OSError, ValueError):
+            row = db.execute(
+                "SELECT value FROM meta WHERE key='open_march'").fetchone()
+            if row:
+                upd = _parse(json.loads(row[0])["updated_at"])
+                daemon_live = ((datetime.now(timezone.utc) - upd).total_seconds()
+                               < OPEN_MARCH_FRESH_S)
 
         cols = "ts, speed_kmh, distance_m, incline_pct, calories, steps"
         rows = [dict(zip(cols.split(", "),
@@ -155,6 +163,10 @@ def main() -> None:
                 covered.append((start, end, st["distance_m"]))
                 added += 1
         if apply:
+            if not daemon_live:
+                # The marker only exists to protect a *live* march; clear it
+                # so the daemon stops warning about a crash on every start.
+                db.execute("DELETE FROM meta WHERE key='open_march'")
             db.commit()
         print(f"done: {added} inserted, {skipped} skipped"
               + ("" if apply else " (dry run — use --apply to write)"))

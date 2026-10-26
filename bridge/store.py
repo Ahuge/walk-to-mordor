@@ -3,6 +3,7 @@
 import os
 import sqlite3
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -138,6 +139,28 @@ def queue_command_row(db: sqlite3.Connection, op: str, args: dict) -> int:
         " VALUES (?,?,?,'pending')",
         (ts, op, _json.dumps(args)),
     )
+    return cur.lastrowid
+
+
+def insert_manual_march(db: sqlite3.Connection, started_at: datetime,
+                        duration_s: int, distance_m: int,
+                        calories: Optional[int] = None,
+                        steps: Optional[int] = None) -> int:
+    """Insert a user-entered walk. Returns the new march id."""
+    start = started_at
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    start = start.astimezone(timezone.utc)
+    end = start + timedelta(seconds=duration_s)
+    avg_speed = round(distance_m / duration_s * 3.6, 2) if duration_s else 0.0
+    cur = db.execute(
+        "INSERT INTO marches (started_at, ended_at, duration_s, distance_m,"
+        " calories, steps, avg_speed_kmh, max_incline_pct)"
+        " VALUES (?,?,?,?,?,?,?,NULL)",
+        (start.isoformat(timespec="seconds"), end.isoformat(timespec="seconds"),
+         duration_s, distance_m, calories, steps, avg_speed),
+    )
+    db.commit()
     return cur.lastrowid
 
 

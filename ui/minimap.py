@@ -85,10 +85,10 @@ class Minimap(tk.Tk):
     def bump_speed(self, delta: float):
         db = open_db()
         try:
-            _text, _walking, speed = live_status(db)
+            _text, walking, speed, _age = live_status(db)
         finally:
             db.close()
-        base = speed if speed > 0.05 else 2.0
+        base = speed if walking and speed > 0.05 else 2.0
         queue_command("set_speed", {"kmh": round(base + delta, 1)})
 
     def refresh(self):
@@ -96,7 +96,7 @@ class Minimap(tk.Tk):
             db = open_db()
             try:
                 today_m, total_m, streak, _tsteps, _steps = march_stats(db)
-                status, _walking, _speed = live_status(db)
+                status, _walking, _speed, _age = live_status(db)
             finally:
                 db.close()
             i, leg, frac = route_position(self.route, total_m)

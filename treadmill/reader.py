@@ -91,17 +91,18 @@ async def find_pad(name_hint: str, quiet: bool = False):
         await asyncio.sleep(10.0)
 
     hint = name_hint.upper()
-    fallback = None
-    for address, (d, adv) in found.items():
+    for _address, (d, adv) in found.items():
         display = d.name or adv.local_name or "pad"
         name = display.upper()
         uuids = [u.lower() for u in (adv.service_uuids or [])]
         is_ftms = FTMS_UUID in uuids
         if hint in name or (is_ftms and ("URTM" in name or "UREVO" in name)):
             return d, display
-        if is_ftms and fallback is None:
-            fallback = (d, display)
-    return fallback
+    # Never fall back to an arbitrary FTMS device: the daemon can control it.
+    if not quiet:
+        print("No matching pad found (pass an empty --name to allow any"
+              " FTMS device).")
+    return None
 
 
 async def stream(csv_path: str | None, name_hint: str) -> None:

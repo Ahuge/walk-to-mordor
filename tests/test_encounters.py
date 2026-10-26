@@ -104,6 +104,24 @@ class TestEncounters(unittest.TestCase):
             self.assertIsNotNone(eng.active_id)
             self.assertTrue(eng.active_id.startswith("poi_"))
 
+    def test_pending_unlock_peek_does_not_consume(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            eng = make_engine(Path(td))
+            eng._pending_unlock = "test_vignette_01"
+            self.assertEqual(eng.peek_pending_unlock(), "test_vignette_01")
+            self.assertEqual(eng.peek_pending_unlock(), "test_vignette_01")
+            self.assertEqual(eng.check_pending_unlock(), "test_vignette_01")
+            self.assertIsNone(eng.peek_pending_unlock())
+
+    def test_force_trigger_clears_matching_pending_unlock(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            eng = make_engine(Path(td))
+            eng._pending_unlock = "test_vignette_01"
+            self.assertTrue(eng.force_trigger("test_vignette_01"))
+            self.assertIsNone(eng.peek_pending_unlock())
+
 
 if __name__ == "__main__":
     unittest.main()

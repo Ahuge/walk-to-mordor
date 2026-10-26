@@ -22,7 +22,8 @@ else:
 
 
 def walked_today() -> bool:
-    from bridge.store import open_db, march_stats
+    from bridge.stats import march_stats
+    from bridge.store import open_db
     db = open_db()
     try:
         today_m, _, _, _, _ = march_stats(db)
