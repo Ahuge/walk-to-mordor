@@ -918,6 +918,23 @@ async def run() -> None:
                         failures += 1
                         _ApiHandler.ble_state["consecutive_failures"] = failures
                 _ApiHandler.ble_state["connected"] = False
+        except asyncio.CancelledError:
+            # Bleak's WinRT backend can surface a bare CancelledError while
+            # discovering GATT services when the pad drops the link. It is a
+            # BaseException, so the except Exception below would miss it and
+            # the whole daemon would exit. Keep the normal reconnect path
+            # unless this task itself is being cancelled.
+            cancelled_task = asyncio.current_task()
+            if (stop_requested.is_set()
+                    or (cancelled_task is not None
+                        and cancelled_task.cancelling())):
+                raise
+            failures += 1
+            _ApiHandler.ble_state["connected"] = False
+            _ApiHandler.ble_state["consecutive_failures"] = failures
+            _ApiHandler.ble_state["last_error"] = (
+                "BLE operation cancelled — reconnecting")
+            log.warning("BLE operation cancelled; reconnecting")
         except Exception as e:  # noqa: BLE001
             failures += 1
             _ApiHandler.ble_state["connected"] = False
@@ -964,7 +981,7 @@ def main() -> None:
     setup_logging(ddir / "daemon.log")
     try:
         asyncio.run(run())
-    except Exception:
+    except BaseException:
         log.exception("daemon crashed")
         raise
 
