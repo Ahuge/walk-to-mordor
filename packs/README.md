@@ -55,6 +55,11 @@ the party token from cumulative lifetime distance.
 }
 ```
 
+Legs may also carry map anchors. `map_start` and `map_end` are cumulative
+pixel positions along `art/journey.json`; `to_xy` is the destination in image
+coordinates (`[x, y]`, y down). The dashboard uses them to keep the token and
+milestone stars on the same path. See `tools/verify_map.py`.
+
 ## encounters.json
 
 ```json
@@ -63,7 +68,7 @@ the party token from cumulative lifetime distance.
   "events": [
     {
       "id": "wargs",
-      "legs": ["weathertop", "trollshaws"],
+      "legs": ["weathertop", "trollshaws-last-bridge"],
       "weight": 1.0,
       "title": "Wargs!",
       "text": "Howls in the dark. Hold 4.5 km/h for 5 minutes to outrun them.",

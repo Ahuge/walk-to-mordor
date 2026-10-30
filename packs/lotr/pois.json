@@ -1,1 +1,86 @@
-{"pois":[{"detour_km":0,"id":"weathertop","journey_frac":0.18,"leg":4,"name":"Weathertop","radius_frac":0.01,"type":"history","wiki":"https://tolkiengateway.net/wiki/Weathertop"},{"detour_km":3,"id":"ford_bruinen","journey_frac":0.28,"leg":5,"name":"Ford of Bruinen","radius_frac":0.01,"type":"history","wiki":"https://tolkiengateway.net/wiki/Ford_of_Bruinen"},{"detour_km":0,"id":"moria_gate","journey_frac":0.33,"leg":6,"name":"Doors of Durin","radius_frac":0.01,"type":"history","wiki":"https://tolkiengateway.net/wiki/Doors_of_Durin"},{"detour_km":0,"id":"battle_dagorlad","journey_frac":0.82,"leg":11,"name":"Dagorlad Battlefield","radius_frac":0.015,"type":"battlefield","wiki":"https://tolkiengateway.net/wiki/Battle_of_Dagorlad"},{"detour_km":0,"id":"prancing_pony","journey_frac":0.12,"leg":3,"name":"The Prancing Pony","radius_frac":0.005,"type":"inn"},{"detour_km":2,"id":"campsite_anduin","journey_frac":0.55,"leg":8,"name":"Riverside Camp","radius_frac":0.005,"type":"campsite"}]}
+{
+  "pois": [
+    {
+      "detour_km": 0,
+      "id": "weathertop",
+      "journey_frac": 0.137615,
+      "leg": 4,
+      "name": "Weathertop",
+      "radius_frac": 0.01,
+      "type": "history",
+      "wiki": "https://tolkiengateway.net/wiki/Weathertop",
+      "xy": [
+        2000,
+        1158
+      ]
+    },
+    {
+      "detour_km": 3,
+      "id": "ford_bruinen",
+      "journey_frac": 0.243228,
+      "leg": 6,
+      "name": "Ford of Bruinen",
+      "radius_frac": 0.01,
+      "type": "history",
+      "wiki": "https://tolkiengateway.net/wiki/Ford_of_Bruinen",
+      "xy": [
+        2328.3,
+        1078.5
+      ]
+    },
+    {
+      "detour_km": 0,
+      "id": "moria_gate",
+      "journey_frac": 0.438739,
+      "leg": 10,
+      "name": "Doors of Durin",
+      "radius_frac": 0.01,
+      "type": "history",
+      "wiki": "https://tolkiengateway.net/wiki/Doors_of_Durin",
+      "xy": [
+        2492,
+        1505
+      ]
+    },
+    {
+      "detour_km": 0,
+      "id": "battle_dagorlad",
+      "journey_frac": 0.79765,
+      "leg": 17,
+      "name": "Dagorlad Battlefield",
+      "radius_frac": 0.015,
+      "type": "battlefield",
+      "wiki": "https://tolkiengateway.net/wiki/Battle_of_Dagorlad",
+      "xy": [
+        3319,
+        2356
+      ]
+    },
+    {
+      "detour_km": 0,
+      "id": "prancing_pony",
+      "journey_frac": 0.088283,
+      "leg": 3,
+      "name": "The Prancing Pony",
+      "radius_frac": 0.005,
+      "type": "inn",
+      "xy": [
+        1793,
+        1163
+      ]
+    },
+    {
+      "detour_km": 2,
+      "id": "campsite_anduin",
+      "journey_frac": 0.55,
+      "leg": 12,
+      "name": "Riverside Camp",
+      "radius_frac": 0.005,
+      "type": "campsite",
+      "xy": [
+        2813.4,
+        1818.1
+      ]
+    }
+  ]
+}

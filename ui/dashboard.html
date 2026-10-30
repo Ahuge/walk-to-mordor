@@ -271,6 +271,14 @@ function pointAt(d) {
   return [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t];  // [lat, lng]
 }
 
+function tokenPx(s) {
+  const leg = routeLegs[s.leg_index];
+  if (leg && typeof leg.map_start === 'number' && typeof leg.map_end === 'number') {
+    return leg.map_start + s.leg_frac * (leg.map_end - leg.map_start);
+  }
+  return s.journey_frac * totalPx;
+}
+
 async function init() {
   try {
     await initInner();
@@ -343,7 +351,11 @@ async function initInner() {
     let cum = 0;
     routeLegs.forEach((leg, idx) => {
       cum += leg.distance;
-      const m = L.marker(pointAt(cum / totalMi * totalPx), {
+      const endPx = typeof leg.map_end === 'number'
+        ? leg.map_end : cum / totalMi * totalPx;
+      const pos = Array.isArray(leg.to_xy)
+        ? [YTOP - leg.to_xy[1], leg.to_xy[0]] : pointAt(endPx);
+      const m = L.marker(pos, {
         icon: L.divIcon({className: '', html: `<div class="star" data-i="${idx}">★</div>`,
                          iconSize: [22, 22], iconAnchor: [11, 11]}),
         title: leg.name,
@@ -424,6 +436,8 @@ async function addOverlays() {
         });
         detourLine.bindPopup(`<b>Detour to ${p.name}</b><br>${detourKm}km off path`);
         groups['POIs'].addLayer(detourLine);
+      } else if (Array.isArray(p.xy)) {
+        markerPos = [YTOP - p.xy[1], p.xy[0]];
       }
       const marker = L.marker(markerPos, {
         icon: L.icon({ iconUrl: iconMap[p.type] || iconMap.history,
@@ -447,7 +461,8 @@ async function tick() {
   lastStats = s;
   lastStatusKind = s.status_kind || (s.walking ? 'walking' : 'idle');
   lastSpeed = s.speed_kmh || 0;
-  const pos = pointAt(s.journey_frac * totalPx);
+  const mapPx = tokenPx(s);
+  const pos = pointAt(mapPx);
   const moved = !lastPos || pos[0] !== lastPos[0] || pos[1] !== lastPos[1];
   lastPos = pos;
   token.setLatLng(pos);
@@ -466,7 +481,7 @@ async function tick() {
 
   // fog: corridor along the visited portion of the path (image px coords),
   // plus a halo around the token so the nearby area is always readable
-  const target = s.journey_frac * totalPx;
+  const target = mapPx;
   let pts = '';
   for (let i = 0; i < cumPx.length && cumPx[i] <= target; i += 4) {
     const p = journey.path[i];
