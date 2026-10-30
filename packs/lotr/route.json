@@ -1,1 +1,365 @@
-{"distance_note":"PLACEHOLDER — calibrate per-leg distances against a Tolkien atlas before locking. Totals ~1,779 mi per the classic fan Walk-to-Mordor accounting.","legs":[{"beats":{"arrival":"The road goes ever on. Your first steps out of Hobbiton.","departure":"A ferry across the Brandywine, and the Shire is behind you."},"distance":120,"from":"Bag End","id":"shire","name":"The Shire","to":"Bucklebury Ferry"},{"beats":{"arrival":"The trees are watching. Fog on the map; keep to the path.","departure":"Out of the downs with a song in your heart and a chill in your bones."},"distance":80,"from":"Bucklebury Ferry","id":"old-forest","name":"Old Forest & Barrow-downs","to":"Bree-land border"},{"beats":{"arrival":"A warm inn, a cold drink. First inn bonus: rest here.","departure":"Strider joins the party. The wilds ahead."},"distance":50,"from":"Bree-land border","id":"bree","name":"Bree","to":"The Prancing Pony"},{"beats":{"arrival":"The climb begins — incline bonus country.","departure":"Fire on the hilltop. Run."},"distance":100,"from":"Bree","id":"weathertop","name":"Weathertop","to":"Weathertop summit"},{"beats":{"arrival":"Troll country. Mind the stones.","departure":"The Ford of Bruinen behind you — the sanctuary ahead."},"distance":220,"from":"Weathertop","id":"trollshaws","name":"Trollshaws to Rivendell","to":"Rivendell"},{"beats":{"arrival":"The doors close. Drums in the deep.","departure":"Over the Bridge of Khazad-dûm — sprint beat. Daylight again."},"distance":70,"from":"Rivendell","id":"moria","name":"The Mines of Moria","to":"Dimrill Dale"},{"beats":{"arrival":"Golden wood. The mirror shows how far you've walked.","departure":"Gifts from Galadriel. The river waits."},"distance":90,"from":"Dimrill Dale","id":"lorien","name":"Lothlórien","to":"Cerim Amroth"},{"beats":{"arrival":"Steady water, steady miles. Endurance leg.","departure":"The falls roar ahead. The fellowship breaks."},"distance":280,"from":"Cerim Amroth","id":"anduin","name":"The Great River","to":"Rauros"},{"beats":{"arrival":"Choose your companion perk for the final stretch.","departure":"Two small figures, one vast wilderness."},"distance":50,"from":"Rauros","id":"rauros","name":"Rauros & the Breaking","to":"Emyn Muil"},{"beats":{"arrival":"Don't follow the lights. Steady pace, no stops.","departure":"The marshes release you. The gate looms."},"distance":200,"from":"Emyn Muil","id":"marshes","name":"Emyn Muil & the Dead Marshes","to":"Morannon"},{"beats":{"arrival":"The Eye is watching. Every march here earns bonus XP.","departure":"Ash and fire. One last climb."},"distance":300,"from":"Morannon","id":"gorgoroth","name":"The Black Gate to Gorgoroth","to":"Mount Doom foothills"},{"beats":{"arrival":"The final mile — best walked in one march.","departure":"It is done. Credits: every mile, every day. Now walk home."},"distance":219,"from":"Mount Doom foothills","id":"doom","name":"Mount Doom","to":"The Sammath Naur"}],"pack":"lotr","total_distance":1779,"unit":"mi"}
+{
+  "pack": "lotr",
+  "unit": "mi",
+  "total_distance": 1779,
+  "distance_note": "Distances are calibrated to the journey path: each leg is the arc length between its map anchors, scaled so the full route is 1,779 mi. Named places use canonical marker coordinates; intermediate anchors are path points. Legs target 80–200 km.",
+  "legs": [
+    {
+      "id": "shire-woody-end",
+      "name": "The Road to Woody End",
+      "from": "Bag End",
+      "to": "Woody End",
+      "distance": 52.37,
+      "map_start": 0.0,
+      "map_end": 133.0,
+      "to_xy": [
+        1593.4,
+        1216.2
+      ],
+      "beats": {
+        "arrival": "The road goes ever on. The Shire’s hedgerows close behind you.",
+        "departure": "Woody End at dusk. The Brandywine is still ahead."
+      }
+    },
+    {
+      "id": "shire-bucklebury",
+      "name": "Woody End to Bucklebury Ferry",
+      "from": "Woody End",
+      "to": "Bucklebury Ferry",
+      "distance": 52.37,
+      "map_start": 133.0,
+      "map_end": 266.0,
+      "to_xy": [
+        1722.7,
+        1200.2
+      ],
+      "beats": {
+        "arrival": "The Brandywine glimmers through the trees.",
+        "departure": "A ferry across the river, and the Shire is behind you."
+      }
+    },
+    {
+      "id": "bree",
+      "name": "Bucklebury Ferry to Bree",
+      "from": "Bucklebury Ferry",
+      "to": "Bree",
+      "distance": 52.33,
+      "map_start": 266.0,
+      "map_end": 398.9,
+      "to_xy": [
+        1793,
+        1163
+      ],
+      "beats": {
+        "arrival": "The Old Forest is behind you. Lights ahead: Bree.",
+        "departure": "A warm inn, a cold drink. Strider joins the party."
+      }
+    },
+    {
+      "id": "weathertop",
+      "name": "Bree to Weathertop",
+      "from": "Bree",
+      "to": "Weathertop",
+      "distance": 87.76,
+      "map_start": 398.9,
+      "map_end": 621.8,
+      "to_xy": [
+        2000,
+        1158
+      ],
+      "beats": {
+        "arrival": "The climb begins — incline bonus country.",
+        "departure": "Fire on the hilltop. Run."
+      }
+    },
+    {
+      "id": "trollshaws-last-bridge",
+      "name": "Weathertop to the Last Bridge",
+      "from": "Weathertop",
+      "to": "The Last Bridge",
+      "distance": 93.94,
+      "map_start": 621.8,
+      "map_end": 860.4,
+      "to_xy": [
+        2190.6,
+        1174.7
+      ],
+      "beats": {
+        "arrival": "Troll country. Mind the stones.",
+        "departure": "The Last Bridge is behind you. The Bruinen is near."
+      }
+    },
+    {
+      "id": "trollshaws-ford",
+      "name": "The Last Bridge to the Ford",
+      "from": "The Last Bridge",
+      "to": "The Ford of Bruinen",
+      "distance": 93.94,
+      "map_start": 860.4,
+      "map_end": 1099.0,
+      "to_xy": [
+        2328.3,
+        1078.5
+      ],
+      "beats": {
+        "arrival": "The river is loud, and the Ford is close.",
+        "departure": "The Ford of Bruinen behind you — the sanctuary ahead."
+      }
+    },
+    {
+      "id": "rivendell",
+      "name": "The Ford to Rivendell",
+      "from": "The Ford of Bruinen",
+      "to": "Rivendell",
+      "distance": 93.94,
+      "map_start": 1099.0,
+      "map_end": 1337.6,
+      "to_xy": [
+        2516,
+        1123
+      ],
+      "beats": {
+        "arrival": "The valley opens. Rivendell, at last.",
+        "departure": "The Council is over. The road south begins."
+      }
+    },
+    {
+      "id": "eregion",
+      "name": "Rivendell to Eregion",
+      "from": "Rivendell",
+      "to": "Eregion",
+      "distance": 84.61,
+      "map_start": 1337.6,
+      "map_end": 1552.5,
+      "to_xy": [
+        2471.7,
+        1330.5
+      ],
+      "beats": {
+        "arrival": "The wilds of Eregion. Hollin under the sky.",
+        "departure": "The mountains close in. The Redhorn waits."
+      }
+    },
+    {
+      "id": "redhorn-gate",
+      "name": "Eregion to the Redhorn Gate",
+      "from": "Eregion",
+      "to": "The Redhorn Gate",
+      "distance": 84.65,
+      "map_start": 1552.5,
+      "map_end": 1767.5,
+      "to_xy": [
+        2438.2,
+        1410.9
+      ],
+      "beats": {
+        "arrival": "Snow and stone. The pass is high and cold.",
+        "departure": "The Redhorn Gate behind you. Moria is below."
+      }
+    },
+    {
+      "id": "moria",
+      "name": "The Redhorn Gate to Moria",
+      "from": "The Redhorn Gate",
+      "to": "Moria",
+      "distance": 84.61,
+      "map_start": 1767.5,
+      "map_end": 1982.4,
+      "to_xy": [
+        2492,
+        1505
+      ],
+      "beats": {
+        "arrival": "The doors close. Drums in the deep.",
+        "departure": "Over the Bridge of Khazad-dûm — sprint beat. Daylight again."
+      }
+    },
+    {
+      "id": "lorien",
+      "name": "Moria to Lothlórien",
+      "from": "Moria",
+      "to": "Lothlórien",
+      "distance": 107.37,
+      "map_start": 1982.4,
+      "map_end": 2255.1,
+      "to_xy": [
+        2666,
+        1679
+      ],
+      "beats": {
+        "arrival": "Golden wood. The mirror shows how far you’ve walked.",
+        "departure": "Gifts from Galadriel. The river waits."
+      }
+    },
+    {
+      "id": "anduin-silverlode",
+      "name": "Lothlórien to the Silverlode",
+      "from": "Lothlórien",
+      "to": "The Silverlode",
+      "distance": 91.27,
+      "map_start": 2255.1,
+      "map_end": 2486.9,
+      "to_xy": [
+        2813.4,
+        1818.1
+      ],
+      "beats": {
+        "arrival": "The Silverlode runs bright beside the road.",
+        "departure": "The river bends south. The Great River takes you."
+      }
+    },
+    {
+      "id": "anduin-sarn-gebir",
+      "name": "The Silverlode to Sarn Gebir",
+      "from": "The Silverlode",
+      "to": "Sarn Gebir",
+      "distance": 91.27,
+      "map_start": 2486.9,
+      "map_end": 2718.7,
+      "to_xy": [
+        2938.6,
+        1958.0
+      ],
+      "beats": {
+        "arrival": "Sarn Gebir. Rocks in the water; keep steady.",
+        "departure": "The rapids are behind you. The Argonath ahead."
+      }
+    },
+    {
+      "id": "anduin-argonath",
+      "name": "Sarn Gebir to the Argonath",
+      "from": "Sarn Gebir",
+      "to": "The Argonath",
+      "distance": 91.27,
+      "map_start": 2718.7,
+      "map_end": 2950.5,
+      "to_xy": [
+        3032.3,
+        2084.7
+      ],
+      "beats": {
+        "arrival": "Two kings in stone. The Argonath.",
+        "departure": "The Great River narrows. Rauros roars."
+      }
+    },
+    {
+      "id": "anduin-rauros",
+      "name": "The Argonath to Rauros",
+      "from": "The Argonath",
+      "to": "Rauros",
+      "distance": 91.27,
+      "map_start": 2950.5,
+      "map_end": 3182.3,
+      "to_xy": [
+        3038.2,
+        2297.5
+      ],
+      "beats": {
+        "arrival": "The falls roar ahead. The fellowship breaks.",
+        "departure": "Choose your companion perk for the final stretch."
+      }
+    },
+    {
+      "id": "emyn-muil",
+      "name": "Rauros to Emyn Muil",
+      "from": "Rauros",
+      "to": "Emyn Muil",
+      "distance": 91.27,
+      "map_start": 3182.3,
+      "map_end": 3414.1,
+      "to_xy": [
+        3155.3,
+        2269.9
+      ],
+      "beats": {
+        "arrival": "Two small figures, one vast wilderness.",
+        "departure": "Don’t follow the lights. Steady pace, no stops."
+      }
+    },
+    {
+      "id": "black-gate",
+      "name": "Emyn Muil to the Black Gate",
+      "from": "Emyn Muil",
+      "to": "The Black Gate",
+      "distance": 91.3,
+      "map_start": 3414.1,
+      "map_end": 3646.0,
+      "to_xy": [
+        3389,
+        2377
+      ],
+      "beats": {
+        "arrival": "The marshes release you. The gate looms.",
+        "departure": "The Black Gate is behind you. The Eye is watching."
+      }
+    },
+    {
+      "id": "gorgoroth",
+      "name": "The Black Gate to Gorgoroth",
+      "from": "The Black Gate",
+      "to": "The Plateau of Gorgoroth",
+      "distance": 85.87,
+      "map_start": 3646.0,
+      "map_end": 3864.1,
+      "to_xy": [
+        3330.6,
+        2570.5
+      ],
+      "beats": {
+        "arrival": "Ash and fire. Every march here earns bonus XP.",
+        "departure": "The plateau opens. Barad-dûr glitters far off."
+      }
+    },
+    {
+      "id": "ash-plains",
+      "name": "Gorgoroth to the Ash Plains",
+      "from": "The Plateau of Gorgoroth",
+      "to": "The Ash Plains",
+      "distance": 85.87,
+      "map_start": 3864.1,
+      "map_end": 4082.2,
+      "to_xy": [
+        3450.3,
+        2659.5
+      ],
+      "beats": {
+        "arrival": "The Ash Plains. No cover, no water, no rest.",
+        "departure": "The mountain grows. One last climb."
+      }
+    },
+    {
+      "id": "doom-foothills",
+      "name": "The Ash Plains to Mount Doom",
+      "from": "The Ash Plains",
+      "to": "Mount Doom foothills",
+      "distance": 85.87,
+      "map_start": 4082.2,
+      "map_end": 4300.3,
+      "to_xy": [
+        3485.6,
+        2519.3
+      ],
+      "beats": {
+        "arrival": "Mount Doom’s foothills. The air burns.",
+        "departure": "The final mile — best walked in one march."
+      }
+    },
+    {
+      "id": "sammath-naur",
+      "name": "Mount Doom to the Sammath Naur",
+      "from": "Mount Doom foothills",
+      "to": "The Sammath Naur",
+      "distance": 85.85,
+      "map_start": 4300.3,
+      "map_end": 4518.4,
+      "to_xy": [
+        3606,
+        2603
+      ],
+      "beats": {
+        "arrival": "The Sammath Naur. The fire is close.",
+        "departure": "It is done. Credits: every mile, every day. Now walk home."
+      }
+    }
+  ]
+}

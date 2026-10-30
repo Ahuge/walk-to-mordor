@@ -30,7 +30,7 @@ Each includes: **Trigger**, **Player Action**, **Meeting-Friendly** (can do whil
 **Trigger:** Random, probability increases with distance since last vignette. Regionally filtered.
 **Player Action:** Read 1-3 paragraphs. No choice, no challenge. Pure atmosphere.
 **Meeting-Friendly:** Yes — just a notification to read when convenient.
-**Variation:** Template + regional tables. Shire: cozy, hobbit-centric (a farmer's dog follows you, smell of pipe-weed). Mordor: bleak, oppressive (ash falls, distant screams). Each region needs 15-20 vignettes; with 12 legs that's 180-240 total. Write once, theme per region.
+**Variation:** Template + regional tables. Shire: cozy, hobbit-centric (a farmer's dog follows you, smell of pipe-weed). Mordor: bleak, oppressive (ash falls, distant screams). Each region needs 15-20 vignettes; with 21 legs that's 315-420 total. Write once, theme per region.
 
 #### 2. Crossroads Choice
 **Type:** Story (choice)

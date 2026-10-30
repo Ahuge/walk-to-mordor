@@ -82,12 +82,12 @@ global across campaigns. Pack format spec: [packs/README.md](../packs/README.md)
 
 ## 3. Pack 1: Walk to Mordor — the route
 
-Twelve legs, each with an arrival beat and a departure beat (paraphrased).
-Distances are **placeholders** — calibrate against a Tolkien atlas before
-locking (the famous fan "Walk to Mordor" totals ~1,779 mi; verify).
+Twenty-one legs, grouped into the twelve story beats below. Each leg has an
+arrival beat and a departure beat (paraphrased). Distances are calibrated to
+the journey path and total ~1,779 mi; named places use canonical map markers.
 Canonical data lives in [packs/lotr/route.json](../packs/lotr/route.json).
 
-| # | Leg | Beat (arrival) |
+| # | Story beat | Arrival |
 |---|---|---|
 | 1 | Bag End → Bucklebury Ferry | Leave the Shire: "The road goes ever on." First steps, second breakfast unlocked as a ritual. |
 | 2 | Old Forest & Barrow-downs | Spooky stretch: fog on the map, random "wight" encounter (see §4). |

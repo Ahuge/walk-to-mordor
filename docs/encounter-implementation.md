@@ -9,7 +9,7 @@ bridge/daemon.py    BLE + MarchTracker + HTTP API (:8471)
 bridge/store.py     SQLite: readings, marches, meta, commands
 bridge/stats.py     march_stats(), live_status(), snapshot_from_db()
 ui/dashboard.html   Leaflet map, polls /api/stats every 2s
-packs/lotr/         route.json (12 legs), art/, markers.json
+packs/lotr/         route.json (21 legs), art/, markers.json
 ```
 
 **Key existing hooks:**
